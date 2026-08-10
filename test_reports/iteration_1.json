@@ -1,0 +1,109 @@
+{
+  "summary": "First full EduSync review: executed 29 external backend API tests plus multi-role desktop/mobile Playwright flows. Core dashboards, CRUD, attendance, fees/Razorpay order, PDFs, exams/results API, homework, salary API, announcements, complaints, enquiries, leaves, timetable and Gemini AI largely work. Backend: 22/29 passed; 7 security/validation tests failed. Frontend core flow coverage was about 90%, with salary Mark Paid broken and development error overlays intermittently blocking the app.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "/api/students",
+        "issue": "A student JWT can list every student in the institute (31 records observed), exposing names, Student IDs, parent names/phones and fee details.",
+        "priority": "CRITICAL"
+      },
+      {
+        "endpoint": "/api/salaries and /api/salaries/{sid}/slip",
+        "issue": "A student JWT can list institute-wide staff payroll and download staff salary-slip PDFs; these endpoints lack role/ownership restrictions.",
+        "priority": "CRITICAL"
+      },
+      {
+        "endpoint": "/api/attendance, /api/timetable, /api/exams",
+        "issue": "Teacher read scope is not enforced consistently. Teacher1 can read records for batches not assigned to that teacher; attendance scope failure was reproduced and code review shows timetable/exams also use institute-wide scope.",
+        "priority": "HIGH"
+      },
+      {
+        "endpoint": "/api/auth/login",
+        "issue": "No brute-force lockout/rate limiting: six consecutive invalid attempts all returned 401 instead of locking after five.",
+        "priority": "HIGH"
+      },
+      {
+        "endpoint": "/api/auth/login",
+        "issue": "Successful login does not set the application access_token as an HttpOnly cookie; only the edge provider cookie is present. The JWT is exposed solely to localStorage/XSS risk.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "/api/students",
+        "issue": "Student input validation permits blank name, negative age and negative monthly_fee and persists the invalid record with 200. Test record was deleted after reproduction."
+      },
+      {
+        "endpoint": "CORS middleware / preflight",
+        "issue": "CORS is configured with CORS_ORIGINS='*' while credentials are enabled; preflight from an unapproved origin did not expose a safe explicit-origin credential policy. Configure explicit frontend origins."
+      },
+      {
+        "endpoint": "seed()",
+        "issue": "Seed password-update requirement is unmet: existing admin is returned unchanged, and seed exits when students exist; ADMIN_PASSWORD changes will not update the existing principal hash."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Salary",
+        "issue": "Mark Paid calls POST /salaries/{id}/pay while backend defines PUT. Click returns 405 and opens the React uncaught runtime error overlay, blocking the page.",
+        "selector": "[data-testid^='pay-salary-']",
+        "priority": "HIGH"
+      },
+      {
+        "component": "React development overlay",
+        "issue": "ResizeObserver loop errors intermittently trigger the full-screen webpack dev error iframe after ordinary dialog/list updates (seen in Homework, Complaints and Exams), intercepting all pointer events and blocking subsequent navigation/actions.",
+        "selector": "#webpack-dev-server-client-overlay",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Salary mark-paid",
+        "issue": "Frontend/backend HTTP method mismatch causes 405; API itself succeeds with PUT.",
+        "affected_selectors": ["[data-testid^='pay-salary-']"]
+      },
+      {
+        "flow": "Exam create then enter marks",
+        "issue": "Exam creation succeeds, but the intermittent ResizeObserver dev overlay blocked Enter Marks, so the complete browser flow could not be reliably executed; ranked/graded result persistence passed at API level.",
+        "affected_selectors": ["add-exam-btn", "[data-testid^='marks-']", "save-marks-btn"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Enforce strict RBAC/ownership on student listing, payroll/slip, teacher attendance/timetable/exam reads, and related resource-mutating endpoints.",
+    "Fix Salary.jsx to use PUT for /salaries/{id}/pay and add try/catch so API failures show a toast rather than an uncaught overlay.",
+    "Implement login lockout/rate limiting and set a secure HttpOnly auth cookie while preserving Bearer support if required.",
+    "Replace wildcard credentialed CORS with explicit allowed frontend origins.",
+    "Add Pydantic constraints for nonblank names, realistic positive ages, nonnegative money/marks, valid date ranges, and required foreign-resource ownership.",
+    "Make seed() idempotently refresh the existing configured admin password hash before any early return.",
+    "Investigate/suppress the recurring ResizeObserver development overlay so routine UI updates do not block the app, then rerun exam and broader frontend flows."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1307 lines and should be split into auth, students, attendance, finance, academic, communication, AI, PDF, and seed modules.",
+    "Several foreign-key reads/updates omit institute scope, including create_fee student lookup, create_salary teacher lookup, result student lookup, attendance mark student lookup, document updates, result deletion, fee verification and submission review; cross-tenant IDOR is possible if IDs leak.",
+    "Sync requests calls to storage/Twilio/Razorpay execute inside async FastAPI handlers and can block the event loop; use async clients or a threadpool.",
+    "Many frontend load effects have no catch/error state, leaving an indefinite Loader when an API call fails (observed transiently on teacher Students).",
+    "Role-based navigation is not authorization; backend endpoints must reject disallowed roles even when pages are hidden."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/app/test_reports/iteration_1.json"
+  ],
+  "success_rate": {
+    "backend": "76% (22/29)",
+    "frontend": "90% of exercised flows"
+  },
+  "seed_data_creation": "Created TEST_API/TEST_UI students, teachers, batches, fees, exams/results, homework/submissions, salaries, announcements, complaints, enquiries and leaves. Temporary invalid student and most TEST_/2099 records were cleaned directly from MongoDB after testing; no seeded demo records were deleted.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Use external URL from frontend/.env. Student used in UI: STU26E566F / student123. Backend regression suite covers 29 tests and should be rerun after fixes. Principal/teacher/student dashboards, QR ID, attendance, Razorpay order, report PDF, timetable AI and student AI summary passed. Retry complete exam UI, salary UI and error-overlay-sensitive flows after fixes.",
+  "rca_of_the_issue": "Primary defects are missing role-aware query constraints and endpoint authorization, weak model constraints, and one explicit frontend method mismatch (Salary POST vs backend PUT). The full-screen UI obstruction is webpack's development error overlay activated by repeated ResizeObserver loop errors, not an application modal. Auth hardening requirements (lockout, HttpOnly cookie, explicit credentialed CORS, idempotent admin password refresh) were not implemented."
+}

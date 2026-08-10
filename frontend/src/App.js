@@ -1,0 +1,74 @@
+import "@/App.css";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { Toaster } from "@/components/ui/sonner";
+import Layout from "@/components/Layout";
+import Landing from "@/pages/Landing";
+import Dashboard from "@/pages/Dashboard";
+import Students from "@/pages/Students";
+import StudentDetail from "@/pages/StudentDetail";
+import Batches from "@/pages/Batches";
+import Teachers from "@/pages/Teachers";
+import Attendance from "@/pages/Attendance";
+import Timetable from "@/pages/Timetable";
+import Fees from "@/pages/Fees";
+import Exams from "@/pages/Exams";
+import Homework from "@/pages/Homework";
+import Salary from "@/pages/Salary";
+import Leaves from "@/pages/Leaves";
+import Announcements from "@/pages/Announcements";
+import Complaints from "@/pages/Complaints";
+import Enquiries from "@/pages/Enquiries";
+import IDCardPage from "@/pages/IDCardPage";
+import { Loader } from "@/components/common";
+
+function Protected({ children }) {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader /></div>;
+  if (!user) return <Navigate to="/" replace />;
+  return children;
+}
+
+function Public({ children }) {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader /></div>;
+  if (user) return <Navigate to="/app/dashboard" replace />;
+  return children;
+}
+
+function App() {
+  return (
+    <div className="App">
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Public><Landing /></Public>} />
+            <Route path="/app" element={<Protected><Layout /></Protected>}>
+              <Route index element={<Navigate to="/app/dashboard" replace />} />
+              <Route path="dashboard" element={<Dashboard />} />
+              <Route path="students" element={<Students />} />
+              <Route path="students/:id" element={<StudentDetail />} />
+              <Route path="batches" element={<Batches />} />
+              <Route path="teachers" element={<Teachers />} />
+              <Route path="attendance" element={<Attendance />} />
+              <Route path="timetable" element={<Timetable />} />
+              <Route path="fees" element={<Fees />} />
+              <Route path="exams" element={<Exams />} />
+              <Route path="homework" element={<Homework />} />
+              <Route path="salary" element={<Salary />} />
+              <Route path="leaves" element={<Leaves />} />
+              <Route path="announcements" element={<Announcements />} />
+              <Route path="complaints" element={<Complaints />} />
+              <Route path="enquiries" element={<Enquiries />} />
+              <Route path="idcard" element={<IDCardPage />} />
+            </Route>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </BrowserRouter>
+        <Toaster position="top-right" richColors />
+      </AuthProvider>
+    </div>
+  );
+}
+
+export default App;

@@ -1,0 +1,96 @@
+{
+  "theme": "light",
+  "typography": {
+    "heading_font": "Outfit",
+    "body_font": "IBM Plex Sans",
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl tracking-tight font-bold",
+      "h2": "text-2xl sm:text-3xl tracking-tight font-semibold",
+      "h3": "text-xl sm:text-2xl tracking-tight font-medium",
+      "body": "text-base leading-relaxed",
+      "small": "text-sm text-slate-500",
+      "label": "text-xs uppercase tracking-[0.2em] font-semibold text-slate-500"
+    }
+  },
+  "colors": {
+    "background": "#F8FAFC",
+    "surface": "#FFFFFF",
+    "primary": "#2563EB",
+    "primary_hover": "#1D4ED8",
+    "text_main": "#0F172A",
+    "text_muted": "#64748B",
+    "border": "#E2E8F0",
+    "success": "#16A34A",
+    "warning": "#F59E0B",
+    "danger": "#DC2626",
+    "info": "#3B82F6"
+  },
+  "visual_enhancers": {
+    "borders": "1px solid border-slate-200. Avoid heavy shadows. Use soft shadows only on hover.",
+    "radii": "rounded-lg for cards, rounded-full for pills and avatars.",
+    "shadows": "shadow-sm for default cards, shadow-md on hover. No muddy shadows."
+  },
+  "grids_and_layouts": {
+    "dashboard_grid": "High density. grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6",
+    "spacing_scale": "Use p-6 or p-8 inside cards. p-8 for main dashboard container.",
+    "sidebar": "Collapsible left sidebar with clearly defined active states (blue-50 bg with blue-600 text and left border)."
+  },
+  "components": {
+    "cards": "Flat solid surfaces with subtle 1px border. No glassmorphism on the dashboard data cards to maintain clarity.",
+    "buttons": "Slightly rounded (rounded-md). High contrast. Primary uses bg-blue-600 text-white.",
+    "charts": "Use Shadcn charts (recharts). Minimalist axes, prominent data lines/bars in blue and indigo.",
+    "tables": "Dense rows, left-aligned text, right-aligned numbers. Highlight alternating rows lightly if needed. Use Shadcn table.",
+    "badges": "Soft background with strong text (e.g., bg-green-100 text-green-800)."
+  },
+  "motion": {
+    "hover": "Subtle transform -translate-y-[2px] for cards, fast color transitions (0.15s ease) for buttons.",
+    "entrance": "Staggered fade-up for dashboard widgets.",
+    "sidebar": "Smooth width transition."
+  },
+  "accessibility": {
+    "contrast": "Ensure all text meets at least 4.5:1 ratio.",
+    "focus": "focus:ring-2 focus:ring-blue-600 focus:ring-offset-2",
+    "data_testid": "MANDATORY on all interactive elements. e.g., data-testid='kpi-total-students'"
+  },
+  "media": {
+    "image_urls": {
+      "school_buildings": [
+        "https://images.pexels.com/photos/17565045/pexels-photo-17565045.jpeg",
+        "https://images.unsplash.com/photo-1621192754911-ffe0d95929dd"
+      ],
+      "students_classrooms": [
+        "https://images.unsplash.com/photo-1719159381916-062fa9f435a6",
+        "https://images.unsplash.com/photo-1728743264694-4ac39fa29385"
+      ],
+      "principals_teachers_avatars": [
+        "https://images.unsplash.com/photo-1778692258270-bc0e80e975c0",
+        "https://images.pexels.com/photos/7580994/pexels-photo-7580994.jpeg",
+        "https://images.pexels.com/photos/7580837/pexels-photo-7580837.jpeg"
+      ]
+    }
+  },
+  "3d_libraries": {
+    "required": false,
+    "reasoning": "This is a high-density, multi-tenant ERP/Dashboard for schools. Clarity, speed, and tabular data visualization are prioritized over 3D immersion."
+  },
+  "instructions_to_main_agent": [
+    "Build a Left Sidebar layout with a top header. The sidebar should contain links to Dashboard, Students, Staff, Attendance, Fees, Exams, Complaints.",
+    "Use Phosphor Icons (@phosphor-icons/react) or Lucide-react for all menu items and KPI cards.",
+    "For the Principal Dashboard, build KPI Cards: Total Enrolled Students (with +XX this month), Today's Attendance %, Total Pending Fee Collections, Active Teachers Present, Open Complaints.",
+    "Below KPIs, include a Monthly Fee Collection chart (Bar chart) and a recent student admissions/complaints table.",
+    "For the QR ID cards feature, build a printable view component that lays out student details compactly.",
+    "Use standard Radix UI / Shadcn UI components for dropdowns, selects, and dialogs. No raw HTML <select> elements.",
+    "Implement Sonner for all toast notifications (e.g., 'Fee reminder sent successfully').",
+    "Ensure the dashboard feels 'premium' by avoiding excessive shadows and relying instead on crisp 1px borders and generous padding (p-6) within cards.",
+    "Do not use full transparent backgrounds for dropdowns or modals."
+  ],
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "Do not converge toward generic outputs. Use the defined Outfit/IBM Plex Sans typography.",
+    "Never apply universal transitions (e.g., transition: all). Add transitions to specific properties only.",
+    "Do not center-align the app container. Respect natural reading flow.",
+    "Always use modern button styles (rounded-md with focus rings).",
+    "Never use AI assistant emojis for icons. Use Phosphor or Lucide icons.",
+    "Add micro-animations for hover states and staggered entrance.",
+    "All interactive elements must include a data-testid attribute in kebab-case."
+  ]
+}
