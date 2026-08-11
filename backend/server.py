@@ -155,6 +155,27 @@ def _logo_bytes(inst):
     return None
 
 
+def draw_watermark(c, inst, w, h):
+    from reportlab.lib.utils import ImageReader
+    from reportlab.lib.units import cm
+    lb = _logo_bytes(inst)
+    if not lb:
+        return
+    try:
+        c.saveState()
+        c.setFillAlpha(0.055)
+        try:
+            c.setStrokeAlpha(0.055)
+        except Exception:
+            pass
+        size = 12 * cm
+        c.drawImage(ImageReader(io.BytesIO(lb)), (w - size) / 2, (h - size) / 2,
+                    width=size, height=size, mask='auto', preserveAspectRatio=True)
+        c.restoreState()
+    except Exception as e:
+        logger.warning(f"watermark failed: {e}")
+
+
 def draw_letterhead(c, inst, w, h, subtitle):
     from reportlab.lib import colors
     from reportlab.lib.units import cm
@@ -1154,6 +1175,7 @@ async def report_card(sid: str, user=Depends(get_current_user)):
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     w, h = A4
+    draw_watermark(c, inst, w, h)
     draw_letterhead(c, inst, w, h, "Student Performance Report Card")
     y = h - 4.7 * cm
     c.setFont("Helvetica-Bold", 13)
@@ -1212,6 +1234,7 @@ async def salary_slip(sid: str, user=Depends(require("principal", "teacher"))):
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     w, h = A4
+    draw_watermark(c, inst, w, h)
     draw_letterhead(c, inst, w, h, f"Salary Slip - {sal['month']}")
     y = h - 4.7 * cm
     rows = [("Employee", sal["teacher_name"]), ("Month", sal["month"]),
@@ -1404,6 +1427,7 @@ async def fee_receipt(fee_id: str, user=Depends(get_current_user)):
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     w, h = A4
+    draw_watermark(c, inst, w, h)
     draw_letterhead(c, inst, w, h, "Official Fee Receipt")
     y = h - 4.8 * cm
     c.setFont("Helvetica", 10)
