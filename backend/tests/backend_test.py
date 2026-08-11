@@ -80,9 +80,11 @@ class TestAuth:
             assert "password_hash" not in data and "_id" not in data
 
     def test_invalid_login_and_lockout_after_five_failures(self):
+        # Use a disposable identifier so the shared principal account remains usable for UI tests.
+        disposable_identifier = f"TEST_lockout_{uuid.uuid4().hex}@example.test"
         statuses = []
         for _ in range(6):
-            response = request("POST", "/auth/login", json={"identifier": PRINCIPAL["identifier"], "password": "definitely-wrong"})
+            response = request("POST", "/auth/login", json={"identifier": disposable_identifier, "password": "definitely-wrong"})
             statuses.append(response.status_code)
         assert statuses[:5] == [401] * 5
         assert statuses[5] == 429, f"Expected brute-force lockout after 5 failures, got {statuses}"

@@ -10,6 +10,10 @@ import logging
 import hmac
 import hashlib
 import io
+import asyncio
+import calendar
+import random
+import httpx
 from datetime import datetime, timezone, timedelta, date
 from typing import Optional, List
 
@@ -94,6 +98,47 @@ def get_object(path):
 MIME = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "gif": "image/gif", "webp": "image/webp", "pdf": "application/pdf"}
 
 
+# ---------------------------------------------------------------- email & sms
+EMAIL_BASE_URL = "https://integrations.emergentagent.com"
+EMAIL_KEY = os.environ.get("EMERGENT_EMAIL_KEY")
+EMAIL_FROM_NAME = os.environ.get("EMAIL_FROM_NAME", "EduSync")
+
+
+async def send_email(to, subject, html):
+    if not EMAIL_KEY or not to:
+        logger.warning("Email skipped (no key/recipient)")
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=30) as c:
+            r = await c.post(f"{EMAIL_BASE_URL}/api/v1/email/send",
+                             headers={"X-Email-Key": EMAIL_KEY},
+                             json={"to": [to], "subject": subject, "html": html, "from_name": EMAIL_FROM_NAME})
+        return r.status_code < 300
+    except Exception as e:
+        logger.warning(f"Email failed: {e}")
+        return False
+
+
+def send_sms(to, body):
+    sid = os.environ.get("TWILIO_ACCOUNT_SID")
+    tok = os.environ.get("TWILIO_AUTH_TOKEN")
+    frm = os.environ.get("TWILIO_FROM_NUMBER")
+    if not (sid and tok and frm and to):
+        return False
+    to = to.strip()
+    if not to.startswith("+"):
+        to = "+91" + to.lstrip("0")
+    try:
+        r = requests.post(f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json",
+                          auth=(sid, tok), data={"From": frm, "To": to, "Body": body}, timeout=15)
+        if r.status_code >= 300:
+            logger.warning(f"SMS failed {r.status_code}: {r.text[:200]}")
+        return r.status_code < 300
+    except Exception as e:
+        logger.warning(f"SMS error: {e}")
+        return False
+
+
 # ---------------------------------------------------------------- auth utils
 def hash_pw(pw): return bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
 def verify_pw(pw, h):
@@ -166,6 +211,7 @@ class TeacherIn(BaseModel):
     available_days: List[str] = []
     monthly_salary: float = 0
     leave_balance: int = 12
+    salary_components: Optional[dict] = None
 
 
 class StudentIn(BaseModel):
@@ -201,7 +247,8 @@ class LeaveIn(BaseModel):
 
 class FeeIn(BaseModel):
     student_id: str
-    amount: float
+    items: List[dict] = []
+    amount: Optional[float] = None
     month: str
     due_date: str
 
@@ -235,7 +282,32 @@ class SubmissionIn(BaseModel):
 class SalaryIn(BaseModel):
     teacher_id: str
     month: str
-    amount: float
+
+
+class SalaryStructure(BaseModel):
+    base: float = Field(default=0, ge=0)
+    hra: float = Field(default=0, ge=0)
+    allowances: float = Field(default=0, ge=0)
+    deductions: float = Field(default=0, ge=0)
+
+
+class FeeComponentIn(BaseModel):
+    name: str
+    amount: float = Field(ge=0)
+
+
+class ForgotReq(BaseModel):
+    email: EmailStr
+
+
+class ResetReq(BaseModel):
+    email: EmailStr
+    otp: str
+    new_password: str
+
+
+class PartialPay(BaseModel):
+    amount: float = Field(gt=0)
 
 
 class AnnouncementIn(BaseModel):
@@ -265,6 +337,8 @@ class EnquiryIn(BaseModel):
 
 class EnquiryUpdate(BaseModel):
     status: Optional[str] = None
+    stage: Optional[str] = None
+    assigned_to: Optional[str] = None
     follow_up_date: Optional[str] = None
     notes: Optional[str] = None
 
@@ -570,6 +644,11 @@ async def apply_leave(body: LeaveIn, user=Depends(require("teacher"))):
     doc.update({"id": lid, "teacher_id": user["id"], "teacher_name": user["name"], "status": "pending",
                 "institute_id": user["institute_id"], "created_at": now_iso()})
     await db.leaves.insert_one(doc)
+    principal = await db.users.find_one({"institute_id": user["institute_id"], "role": "principal"})
+    html = f"<div style='font-family:Arial'><h3 style='color:#2563eb'>Leave Application</h3><p><b>{user['name']}</b> applied for leave from <b>{body.from_date}</b> to <b>{body.to_date}</b>.</p><p>Reason: {body.reason}</p><p style='color:#64748b;font-size:12px'>— EduSync</p></div>"
+    asyncio.create_task(send_email(user.get("email"), "Your leave application was submitted", html))
+    if principal:
+        asyncio.create_task(send_email(principal.get("email"), f"New leave request from {user['name']}", html))
     return await db.leaves.find_one({"id": lid}, {"_id": 0})
 
 
@@ -586,9 +665,23 @@ async def decide_leave(lid: str, body: ComplaintUpdate, user=Depends(require("pr
     leave = await db.leaves.find_one({"id": lid, "institute_id": user["institute_id"]})
     if not leave:
         raise HTTPException(404, "Leave not found")
-    await db.leaves.update_one({"id": lid}, {"$set": {"status": body.status, "decided_at": now_iso()}})
+    if leave["status"] != "pending":
+        raise HTTPException(400, "Leave has already been decided")
+    if body.status not in ("approved", "rejected"):
+        raise HTTPException(400, "Status must be approved or rejected")
+    res = await db.leaves.update_one({"id": lid, "status": "pending"}, {"$set": {"status": body.status, "decided_at": now_iso()}})
+    if res.modified_count == 0:
+        raise HTTPException(400, "Leave has already been decided")
     if body.status == "approved":
         await db.users.update_one({"id": leave["teacher_id"]}, {"$inc": {"leave_balance": -1}})
+    tuser = await db.users.find_one({"id": leave["teacher_id"]})
+    principal = await db.users.find_one({"institute_id": user["institute_id"], "role": "principal"})
+    color = "#16a34a" if body.status == "approved" else "#dc2626"
+    html = f"<div style='font-family:Arial'><h3 style='color:#2563eb'>Leave {body.status.title()}</h3><p>Leave ({leave['from_date']} to {leave['to_date']}) for <b>{leave['teacher_name']}</b> has been <b style='color:{color}'>{body.status}</b>.</p><p style='color:#64748b;font-size:12px'>— EduSync</p></div>"
+    if tuser:
+        asyncio.create_task(send_email(tuser.get("email"), f"Your leave was {body.status}", html))
+    if principal:
+        asyncio.create_task(send_email(principal.get("email"), f"Leave {body.status}: {leave['teacher_name']}", html))
     return await db.leaves.find_one({"id": lid}, {"_id": 0})
 
 
@@ -604,13 +697,17 @@ async def list_fees(user=Depends(get_current_user)):
 
 @api.post("/fees")
 async def create_fee(body: FeeIn, user=Depends(require("principal"))):
-    s = await db.students.find_one({"id": body.student_id})
+    s = await db.students.find_one({"id": body.student_id, "institute_id": user["institute_id"]})
+    if not s:
+        raise HTTPException(404, "Student not found")
+    items = body.items or []
+    amount = round(sum(float(i.get("amount", 0)) for i in items), 2) if items else float(body.amount or 0)
     fid = str(uuid.uuid4())
-    doc = body.model_dump()
-    doc.update({"id": fid, "institute_id": user["institute_id"], "status": "pending", "paid_amount": 0,
-                "student_name": s["name"] if s else "", "parent_phone": s.get("parent_phone", "") if s else "",
-                "created_at": now_iso(), "payment_id": None, "receipt_no": None})
-    await db.fees.insert_one(doc)
+    await db.fees.insert_one({"id": fid, "student_id": body.student_id, "items": items, "amount": amount,
+                             "month": body.month, "due_date": body.due_date, "institute_id": user["institute_id"],
+                             "status": "pending", "paid_amount": 0, "student_name": s["name"] if s else "",
+                             "parent_phone": s.get("parent_phone", "") if s else "", "created_at": now_iso(),
+                             "payment_id": None, "receipt_no": None})
     return await db.fees.find_one({"id": fid}, {"_id": 0})
 
 
@@ -622,7 +719,10 @@ async def rzp_order(payload: dict, user=Depends(get_current_user)):
         raise HTTPException(404, "Fee not found")
     if not rzp_client:
         raise HTTPException(500, "Razorpay not configured")
-    amount = int(float(fee["amount"]) * 100)
+    remaining = float(fee["amount"]) - float(fee.get("paid_amount", 0))
+    if remaining <= 0:
+        raise HTTPException(400, "Fee already fully paid")
+    amount = int(remaining * 100)
     order = rzp_client.order.create({"amount": amount, "currency": "INR", "payment_capture": 1, "receipt": f"fee_{fee_id[:20]}"})
     await db.fees.update_one({"id": fee_id}, {"$set": {"order_id": order["id"]}})
     return {"order_id": order["id"], "amount": amount, "currency": "INR", "key_id": RZP_KEY,
@@ -659,21 +759,14 @@ async def send_fee_reminder(fee_id: str, user=Depends(require("principal"))):
     fee = await db.fees.find_one({"id": fee_id, "institute_id": user["institute_id"]})
     if not fee:
         raise HTTPException(404, "Not found")
-    msg = f"Dear Parent, fee of Rs.{fee['amount']} for {fee.get('student_name')} ({fee.get('month')}) is due on {fee.get('due_date')}. Please pay at the earliest. - {(await db.institutes.find_one({'id': user['institute_id']}))['name']}"
-    sms_sent = False
-    sid = os.environ.get("TWILIO_ACCOUNT_SID")
-    if sid and os.environ.get("TWILIO_AUTH_TOKEN") and fee.get("parent_phone"):
-        try:
-            r = requests.post(f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json",
-                              auth=(sid, os.environ["TWILIO_AUTH_TOKEN"]),
-                              data={"From": os.environ.get("TWILIO_FROM_NUMBER"), "To": fee["parent_phone"], "Body": msg}, timeout=15)
-            sms_sent = r.status_code < 300
-        except Exception as e:
-            logger.warning(f"SMS failed: {e}")
+    inst = await db.institutes.find_one({"id": user["institute_id"]})
+    remaining = round(float(fee["amount"]) - float(fee.get("paid_amount", 0)), 2)
+    msg = f"Dear Parent, fee of Rs.{remaining} for {fee.get('student_name')} ({fee.get('month')}) is due on {fee.get('due_date')}. Please pay at the earliest. - {inst['name'] if inst else 'EduSync'}"
+    sms_sent = send_sms(fee.get("parent_phone"), msg)
     await db.fees.update_one({"id": fee_id}, {"$set": {"last_reminder": now_iso()}})
     await db.notifications.insert_one({"id": str(uuid.uuid4()), "institute_id": user["institute_id"],
                                        "type": "fee_reminder", "message": msg, "created_at": now_iso()})
-    return {"ok": True, "sms_sent": sms_sent, "message": "Reminder logged" + (" and SMS sent" if sms_sent else " (in-app only; configure Twilio for SMS)")}
+    return {"ok": True, "sms_sent": sms_sent, "message": "Reminder sent via SMS" if sms_sent else "Reminder logged (SMS not delivered — check parent phone)"}
 
 
 # ---------------------------------------------------------------- exams & results
@@ -806,11 +899,36 @@ async def list_salaries(user=Depends(require("principal", "teacher"))):
 
 @api.post("/salaries")
 async def create_salary(body: SalaryIn, user=Depends(require("principal"))):
-    t = await db.users.find_one({"id": body.teacher_id})
+    t = await db.users.find_one({"id": body.teacher_id, "institute_id": user["institute_id"]})
+    if not t:
+        raise HTTPException(404, "Teacher not found")
+    if await db.salaries.find_one({"teacher_id": body.teacher_id, "month": body.month, "institute_id": user["institute_id"]}):
+        raise HTTPException(409, "Salary already generated for this teacher and month")
+    comp = t.get("salary_components") or {}
+    base = float(comp.get("base", t.get("monthly_salary", 0)))
+    hra = float(comp.get("hra", 0))
+    allow = float(comp.get("allowances", 0))
+    ded = float(comp.get("deductions", 0))
+    gross = round(base + hra + allow, 2)
+    y, m = int(body.month[:4]), int(body.month[5:7])
+    dim = calendar.monthrange(y, m)[1]
+    ms, me = date(y, m, 1), date(y, m, dim)
+    lwp_days = 0
+    for lv in await db.leaves.find({"institute_id": user["institute_id"], "teacher_id": body.teacher_id, "status": "rejected"}).to_list(1000):
+        try:
+            f = date.fromisoformat(lv["from_date"]); tt = date.fromisoformat(lv["to_date"])
+        except Exception:
+            continue
+        s0, e0 = max(f, ms), min(tt, me)
+        if s0 <= e0:
+            lwp_days += (e0 - s0).days + 1
+    lwp_amount = round(gross / dim * lwp_days, 2) if dim else 0
+    net = round(gross - ded - lwp_amount, 2)
     sid = str(uuid.uuid4())
-    await db.salaries.insert_one({"id": sid, "teacher_id": body.teacher_id, "teacher_name": t["name"] if t else "",
-                                  "month": body.month, "amount": body.amount, "status": "pending",
-                                  "institute_id": user["institute_id"], "created_at": now_iso()})
+    await db.salaries.insert_one({"id": sid, "teacher_id": body.teacher_id, "teacher_name": t["name"],
+                                  "month": body.month, "base": base, "hra": hra, "allowances": allow, "deductions": ded,
+                                  "gross": gross, "days_in_month": dim, "lwp_days": lwp_days, "lwp_amount": lwp_amount,
+                                  "amount": net, "status": "pending", "institute_id": user["institute_id"], "created_at": now_iso()})
     return await db.salaries.find_one({"id": sid}, {"_id": 0})
 
 
@@ -881,7 +999,8 @@ async def list_enquiries(user=Depends(require("principal", "teacher"))):
 async def create_enquiry(body: EnquiryIn, user=Depends(require("principal", "teacher"))):
     eid = str(uuid.uuid4())
     doc = body.model_dump()
-    doc.update({"id": eid, "institute_id": user["institute_id"], "status": "new", "created_at": now_iso()})
+    doc.update({"id": eid, "institute_id": user["institute_id"], "status": "new", "stage": "new_lead",
+                "assigned_to": "", "assigned_to_name": "", "created_at": now_iso()})
     await db.enquiries.insert_one(doc)
     return await db.enquiries.find_one({"id": eid}, {"_id": 0})
 
@@ -889,6 +1008,9 @@ async def create_enquiry(body: EnquiryIn, user=Depends(require("principal", "tea
 @api.put("/enquiries/{eid}")
 async def update_enquiry(eid: str, body: EnquiryUpdate, user=Depends(require("principal", "teacher"))):
     upd = {k: v for k, v in body.model_dump().items() if v is not None}
+    if "assigned_to" in upd:
+        t = await db.users.find_one({"id": upd["assigned_to"]})
+        upd["assigned_to_name"] = t["name"] if t else ""
     await db.enquiries.update_one({"id": eid, "institute_id": user["institute_id"]}, {"$set": upd})
     return await db.enquiries.find_one({"id": eid}, {"_id": 0})
 
@@ -1029,11 +1151,16 @@ async def salary_slip(sid: str, user=Depends(require("principal", "teacher"))):
     c.drawString(2 * cm, h - 2.4 * cm, f"Salary Slip — {sal['month']}")
     c.setFillColor(colors.HexColor("#0F172A"))
     y = h - 4.5 * cm
-    for label, val in [("Employee", sal["teacher_name"]), ("Month", sal["month"]),
-                       ("Amount", f"Rs. {sal['amount']}"), ("Status", sal["status"].upper()),
-                       ("Slip No", sal.get("slip_no", "-"))]:
+    rows = [("Employee", sal["teacher_name"]), ("Month", sal["month"]),
+            ("Base Pay", f"Rs. {sal.get('base', sal['amount'])}"), ("HRA", f"Rs. {sal.get('hra', 0)}"),
+            ("Allowances", f"Rs. {sal.get('allowances', 0)}"), ("Gross", f"Rs. {sal.get('gross', sal['amount'])}"),
+            ("Deductions", f"- Rs. {sal.get('deductions', 0)}"),
+            (f"LWP ({sal.get('lwp_days', 0)} day/{sal.get('days_in_month', 30)} days)", f"- Rs. {sal.get('lwp_amount', 0)}"),
+            ("NET PAY", f"Rs. {sal['amount']}"), ("Status", sal["status"].upper()), ("Slip No", sal.get("slip_no", "-"))]
+    for label, val in rows:
+        bold = label in ("NET PAY", "Gross")
         c.setFont("Helvetica-Bold", 11); c.drawString(2 * cm, y, label + ":")
-        c.setFont("Helvetica", 11); c.drawString(6 * cm, y, str(val)); y -= 0.8 * cm
+        c.setFont("Helvetica-Bold" if bold else "Helvetica", 11); c.drawString(9 * cm, y, str(val)); y -= 0.75 * cm
     c.setFillColor(colors.HexColor("#64748B")); c.setFont("Helvetica-Oblique", 8)
     c.drawString(2 * cm, 1.5 * cm, "Generated by EduSync — Privam Solutions")
     c.showPage(); c.save(); buf.seek(0)
@@ -1153,6 +1280,158 @@ async def ai_timetable(body: AIReq, user=Depends(require("principal"))):
     except Exception as e:
         logger.warning(f"AI failed: {e}")
         return {"suggestions": "Distribute core subjects in morning slots.\nAvoid scheduling same teacher in back-to-back different rooms.\nKeep one buffer slot for revisions."}
+
+
+# ---------------------------------------------------------------- fee components
+@api.get("/fee-components")
+async def list_fee_components(user=Depends(require("principal", "teacher"))):
+    return await db.fee_components.find(scope(user), {"_id": 0}).to_list(200)
+
+
+@api.post("/fee-components")
+async def create_fee_component(body: FeeComponentIn, user=Depends(require("principal"))):
+    cid = str(uuid.uuid4())
+    await db.fee_components.insert_one({"id": cid, "name": body.name, "amount": body.amount, "institute_id": user["institute_id"]})
+    return await db.fee_components.find_one({"id": cid}, {"_id": 0})
+
+
+@api.put("/fee-components/{cid}")
+async def update_fee_component(cid: str, body: FeeComponentIn, user=Depends(require("principal"))):
+    await db.fee_components.update_one({"id": cid, "institute_id": user["institute_id"]}, {"$set": {"name": body.name, "amount": body.amount}})
+    return await db.fee_components.find_one({"id": cid}, {"_id": 0})
+
+
+@api.delete("/fee-components/{cid}")
+async def delete_fee_component(cid: str, user=Depends(require("principal"))):
+    await db.fee_components.delete_one({"id": cid, "institute_id": user["institute_id"]})
+    return {"ok": True}
+
+
+@api.post("/fees/{fee_id}/pay-partial")
+async def pay_partial(fee_id: str, body: PartialPay, user=Depends(require("principal"))):
+    fee = await db.fees.find_one({"id": fee_id, "institute_id": user["institute_id"]})
+    if not fee:
+        raise HTTPException(404, "Not found")
+    new_paid = round(float(fee.get("paid_amount", 0)) + body.amount, 2)
+    if new_paid > float(fee["amount"]) + 0.01:
+        raise HTTPException(400, "Amount exceeds remaining balance")
+    status = "paid" if new_paid >= float(fee["amount"]) else "partial"
+    receipt_no = "RCPT-" + datetime.now().strftime("%y%m%d") + "-" + uuid.uuid4().hex[:6].upper()
+    await db.fees.update_one({"id": fee_id}, {"$set": {"paid_amount": new_paid, "status": status,
+                             "receipt_no": receipt_no, "payment_id": "CASH", "paid_at": now_iso()}})
+    return {"ok": True, "receipt_no": receipt_no, "remaining": round(float(fee["amount"]) - new_paid, 2), "status": status}
+
+
+@api.get("/fees/{fee_id}/receipt")
+async def fee_receipt(fee_id: str, user=Depends(get_current_user)):
+    fee = await db.fees.find_one({"id": fee_id, "institute_id": user["institute_id"]}, {"_id": 0})
+    if not fee:
+        raise HTTPException(404, "Not found")
+    if user["role"] == "student" and fee["student_id"] != user["id"]:
+        raise HTTPException(403, "Forbidden")
+    inst = await db.institutes.find_one({"id": user["institute_id"]})
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import cm
+    from reportlab.lib import colors
+    from reportlab.pdfgen import canvas
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    w, h = A4
+    c.setFillColor(colors.HexColor("#2563EB")); c.rect(0, h - 3.2 * cm, w, 3.2 * cm, fill=1, stroke=0)
+    c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 22); c.drawString(2 * cm, h - 1.7 * cm, inst["name"] if inst else "EduSync")
+    c.setFont("Helvetica", 11); c.drawString(2 * cm, h - 2.5 * cm, "Official Fee Receipt")
+    c.setFillColor(colors.HexColor("#0F172A")); y = h - 4.6 * cm
+    c.setFont("Helvetica", 10)
+    c.drawString(2 * cm, y, f"Receipt No: {fee.get('receipt_no','-')}")
+    c.drawRightString(w - 2 * cm, y, f"Date: {datetime.now().strftime('%d %b %Y')}"); y -= 0.7 * cm
+    c.drawString(2 * cm, y, f"Student: {fee.get('student_name')}    Month: {fee.get('month')}"); y -= 1 * cm
+    c.setFont("Helvetica-Bold", 11); c.drawString(2 * cm, y, "Particulars"); c.drawRightString(w - 2 * cm, y, "Amount (Rs.)")
+    y -= 0.25 * cm; c.setStrokeColor(colors.HexColor("#E2E8F0")); c.line(2 * cm, y, w - 2 * cm, y); y -= 0.6 * cm
+    c.setFont("Helvetica", 10)
+    items = fee.get("items") or [{"name": "Tuition Fee", "amount": fee["amount"]}]
+    for it in items:
+        c.drawString(2 * cm, y, str(it.get("name"))); c.drawRightString(w - 2 * cm, y, f"{it.get('amount')}"); y -= 0.55 * cm
+    y -= 0.2 * cm; c.line(2 * cm, y, w - 2 * cm, y); y -= 0.6 * cm
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(2 * cm, y, "Total"); c.drawRightString(w - 2 * cm, y, f"{fee['amount']}"); y -= 0.6 * cm
+    c.setFillColor(colors.HexColor("#16A34A")); c.drawString(2 * cm, y, "Paid"); c.drawRightString(w - 2 * cm, y, f"{fee.get('paid_amount',0)}"); y -= 0.6 * cm
+    rem = round(float(fee['amount']) - float(fee.get('paid_amount', 0)), 2)
+    c.setFillColor(colors.HexColor("#DC2626") if rem > 0 else colors.HexColor("#16A34A"))
+    c.drawString(2 * cm, y, "Balance Due"); c.drawRightString(w - 2 * cm, y, f"{rem}")
+    c.setFillColor(colors.HexColor("#64748B")); c.setFont("Helvetica-Oblique", 8)
+    c.drawString(2 * cm, 1.5 * cm, "This is a computer-generated receipt. Generated by EduSync - Privam Solutions")
+    c.showPage(); c.save(); buf.seek(0)
+    return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": f"inline; filename=receipt_{fee_id}.pdf"})
+
+
+@api.put("/teachers/{tid}/salary-structure")
+async def set_salary_structure(tid: str, body: SalaryStructure, user=Depends(require("principal"))):
+    await db.users.update_one({"id": tid, "institute_id": user["institute_id"], "role": "teacher"},
+                              {"$set": {"salary_components": body.model_dump()}})
+    return await db.users.find_one({"id": tid}, {"_id": 0, "password_hash": 0})
+
+
+# ---------------------------------------------------------------- password reset (OTP via email)
+@api.post("/auth/forgot-password")
+async def forgot_password(body: ForgotReq):
+    email = body.email.lower()
+    user = await db.users.find_one({"email": email})
+    if user:
+        otp = f"{random.randint(100000, 999999)}"
+        await db.password_resets.update_one({"email": email}, {"$set": {"email": email, "otp": otp,
+            "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat(), "used": False}}, upsert=True)
+        html = f"<div style='font-family:Arial,sans-serif'><h2 style='color:#2563eb'>EduSync Password Reset</h2><p>Hi {user['name']},</p><p>Your one-time password (OTP) is:</p><p style='font-size:30px;font-weight:bold;letter-spacing:8px;color:#0f172a'>{otp}</p><p>This code expires in 15 minutes. If you didn't request this, please ignore.</p><p style='color:#64748b;font-size:12px'>- EduSync by Privam Solutions</p></div>"
+        await send_email(email, "Your EduSync Password Reset OTP", html)
+    return {"ok": True, "message": "If that email exists, an OTP has been sent."}
+
+
+@api.post("/auth/reset-password")
+async def reset_password(body: ResetReq):
+    email = body.email.lower()
+    rec = await db.password_resets.find_one({"email": email})
+    now = datetime.now(timezone.utc)
+    if not rec or rec.get("used") or rec.get("otp") != body.otp or datetime.fromisoformat(rec["expires_at"]) < now:
+        raise HTTPException(400, "Invalid or expired OTP")
+    if len(body.new_password) < 6:
+        raise HTTPException(400, "Password must be at least 6 characters")
+    await db.users.update_one({"email": email}, {"$set": {"password_hash": hash_pw(body.new_password)}})
+    await db.password_resets.update_one({"email": email}, {"$set": {"used": True}})
+    return {"ok": True, "message": "Password reset successful"}
+
+
+# ---------------------------------------------------------------- overdue fee reminders + cron
+async def _send_overdue(institute_id=None):
+    q = {"status": {"$in": ["pending", "partial"]}, "due_date": {"$lt": today_str()}}
+    if institute_id:
+        q["institute_id"] = institute_id
+    sent = 0
+    for fee in await db.fees.find(q).to_list(5000):
+        inst = await db.institutes.find_one({"id": fee["institute_id"]})
+        remaining = round(float(fee["amount"]) - float(fee.get("paid_amount", 0)), 2)
+        msg = f"Dear Parent, fee of Rs.{remaining} for {fee.get('student_name')} ({fee.get('month')}) is OVERDUE (due {fee.get('due_date')}). Please pay at the earliest. - {inst['name'] if inst else 'EduSync'}"
+        if send_sms(fee.get("parent_phone"), msg):
+            sent += 1
+        await db.fees.update_one({"id": fee["id"]}, {"$set": {"last_reminder": now_iso()}})
+        await db.notifications.insert_one({"id": str(uuid.uuid4()), "institute_id": fee["institute_id"],
+                                           "type": "fee_overdue", "message": msg, "created_at": now_iso()})
+    return sent
+
+
+@api.post("/fees/send-overdue-reminders")
+async def send_overdue_reminders(user=Depends(require("principal"))):
+    sent = await _send_overdue(user["institute_id"])
+    return {"ok": True, "sms_sent": sent, "message": f"Overdue reminders processed - {sent} SMS sent"}
+
+
+@api.post("/cron/fee-reminders")
+async def cron_fee_reminders(authorization: Optional[str] = Header(None)):
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    secret = os.environ.get("WEBHOOK_CRON_SECRET", "")
+    token = authorization[7:] if authorization and authorization.startswith("Bearer ") else ""
+    if not secret or not hmac.compare_digest(token, secret):
+        raise HTTPException(401, "Unauthorized")
+    asyncio.create_task(_send_overdue())
+    return {"ok": True, "queued": True}
 
 
 # ---------------------------------------------------------------- seed

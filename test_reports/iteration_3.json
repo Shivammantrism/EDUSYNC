@@ -1,0 +1,91 @@
+{
+  "summary": "Executed 38 external backend tests plus multi-role Playwright coverage for forgot-password, custom fees/partial payments/receipts/reminders, salary structure/LWP/payment/slips, admission pipeline, leave decisions, dark navigation, animated KPIs, PDFs, and legacy modules. Requested frontend flows passed. Backend passed 33/38; five security/data-integrity defects remain. Repeated Radix dialog accessibility warnings also remain.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "/api/leaves/{id}",
+        "issue": "Leave approval is not idempotent: approving the same leave twice returns success twice and reduced teacher leave_balance from 12 to 10. The test restored the original balance.",
+        "priority": "HIGH"
+      },
+      {
+        "endpoint": "/api/fees",
+        "issue": "Fee creation accepts a nonexistent student_id, returns 200, and persists an orphan fee with blank student details. The test record was cleaned.",
+        "priority": "HIGH"
+      },
+      {
+        "endpoint": "/api/salaries",
+        "issue": "The API accepts duplicate salary generation for the same teacher and month; both calls return 200 and create separate payroll rows. Test records were cleaned.",
+        "priority": "HIGH"
+      },
+      {
+        "endpoint": "/api/auth/login",
+        "issue": "Successful login still does not set an application access_token HttpOnly cookie; only the edge-provider __cf_bm cookie is returned.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "CORS middleware",
+        "issue": "Credentialed explicit-origin CORS playbook check fails: allow_credentials is false and the response uses Access-Control-Allow-Origin: *."
+      },
+      {
+        "endpoint": "/api/auth/forgot-password",
+        "issue": "Generated password-reset OTPs are written to application INFO logs in plaintext, exposing a live authentication secret to anyone with log access."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Radix dialogs in Forgot Password, Fees, Salary, Enquiries and Leaves",
+        "issue": "Opening dialogs repeatedly logs a missing Description/aria-describedby accessibility warning. Functional behavior passes, but screen-reader context is incomplete.",
+        "selector": "[role='dialog']",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_iteration3_features.py",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/app/test_reports/pytest/pytest_iteration3_features.xml"
+  ],
+  "action_items": [
+    "Make leave decisions transition-safe/idempotent; only a pending leave may be decided, validate approved/rejected values, and decrement balance atomically once.",
+    "Validate fee student_id against the authenticated institute and return 404 before inserting when absent.",
+    "Add a unique teacher_id+month salary constraint and return 409 for duplicate generation.",
+    "Implement the required secure HttpOnly auth cookie and explicit credentialed CORS origins, or formally revise the auth playbook if Bearer-only localStorage is intentional.",
+    "Remove plaintext OTP logging and add reset-request/OTP-attempt rate limits.",
+    "Add DialogDescription or intentional aria-describedby handling to dialogs."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1603 lines and should be split into focused auth, finance, payroll, academics, communication, PDF, and seed modules.",
+    "create_fee looks up a student by id without institute scope or existence validation, directly causing orphan records and retaining cross-tenant IDOR risk if an external id leaks.",
+    "decide_leave uses an unconditional $inc whenever body.status is approved; it does not require current status=pending or validate allowed states.",
+    "SalaryStructure fields allow negative values, and create_salary has no database uniqueness guard for teacher/month.",
+    "Forgot-password stores OTP plaintext and logs it at INFO; store a keyed hash, never log the code, rate-limit issuance/verification, and expire records with a TTL index.",
+    "Synchronous requests calls for storage and Twilio run inside async handlers and can block the event loop."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_iteration3_features.py",
+    "/app/frontend/src/pages/Fees.jsx",
+    "/app/frontend/src/pages/Salary.jsx",
+    "/app/frontend/src/pages/Enquiries.jsx",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/app/test_reports/pytest/pytest_iteration3_features.xml",
+    "/app/test_reports/iteration_3.json"
+  ],
+  "success_rate": {
+    "backend": "87% (33/38)",
+    "frontend": "100% of requested functional flows; one recurring low-priority accessibility warning"
+  },
+  "seed_data_creation": "Created temporary API fee components, fees, salaries, rejected/approved leaves and enquiries; API fixtures cleaned them. UI created one Lab Fee component, one 2098-12 partial fee, one 2098-11 paid salary, one pipeline lead and one rejected leave; all five UI artifacts were deleted directly after verification. Teacher salary structure remains 30000 base + 8000 HRA + 4000 allowances - 2000 deductions as exercised.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "Used principal and teacher credentials from /app/memory/test_credentials.md. Student STU26DDC67 was read from the live principal Students table and authenticated with the documented default password. /app/auth_testing.md is absent.",
+  "context_for_next_testing_agent": "Frontend flows passed end-to-end: forgot-password advanced to OTP/new-password; custom fee reached partial with running paid/balance; reminder endpoints toasted success; receipt/slip buttons fetched 200 application/pdf and opened popups; salary structure/generation/payment passed; five-column lead stage/assignment passed; teacher apply and principal reject passed. Principal and student legacy module navigation loaded without webpack/ResizeObserver overlay. Added missing testids fee-month, fee-due-date, struct-allowances, struct-deductions, salary-month, enq-course and enq-notes and browser-verified them.",
+  "rca_of_the_issue": "Data-integrity failures come from missing resource existence/uniqueness/state-transition checks: create_fee inserts after a non-scoped lookup that may return None; create_salary always inserts without a unique key; decide_leave unconditionally decrements balance on every approved request. Auth playbook failures are explicit implementation choices in code: login returns JWT JSON without set_cookie, and CORSMiddleware is configured allow_credentials=False with wildcard origin. OTP exposure is caused by logger.info of the generated code."
+}

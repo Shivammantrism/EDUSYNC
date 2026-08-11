@@ -39,6 +39,16 @@ Multi-institute management SaaS with two connected portals sharing one database.
 - Announcements, Complaints (three-way + status), Enquiries (log→follow-up→convert).
 - Seed demo data for the owner principal (30 students, 4 teachers/batches, fees, attendance, exams, etc.).
 
+## Implemented (2026-08-11) — Design upgrade + advanced modules
+- Dark-navy glass sidebar & header with per-module accent colors; animated KPI counters; gradient interactive charts; framer-motion page transitions; branded loader; button/card hover polish.
+- Forgot Password: email OTP flow (/auth/forgot-password + /auth/reset-password) via managed Resend; 15-min expiry, single-use.
+- Fee structure customisation: fee-components CRUD, itemized fee creation, partial payments with running balance, branded PDF receipts with itemized breakdown.
+- Salary structure customisation: base/HRA/allowances/deductions per teacher; auto salary generation with LWP = gross ÷ days-in-month × unapproved(rejected) leave days; itemized salary-slip PDF; duplicate teacher+month guard (409).
+- Admission lead pipeline: 5-stage Kanban (New Lead → Contacted → Demo Scheduled → Admitted → Closed) with assign-to-teacher.
+- Leave apply/approve/reject sends emails (teacher + principal) via Resend; approval now idempotent/state-safe.
+- Twilio SMS live for overdue fee reminders (per-fee reminder, bulk "Remind Overdue", and daily cron .emergent/crons.yml at 09:30 IST → /api/cron/fee-reminders, Bearer-secured).
+- Data-integrity hardening: fee student existence check (404), salary uniqueness (409), leave idempotency (400), negative salary rejection (422), OTP no longer logged.
+
 ## Backlog / Remaining (P2)
 - Add DialogDescription/aria-describedby to dialogs (LOW — console accessibility warning only).
 - Add error/catch states to page load effects (avoid indefinite loaders on API failure).

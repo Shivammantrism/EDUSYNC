@@ -1,16 +1,17 @@
 import { useEffect, useState } from "react";
-import api, { formatErr } from "@/lib/api";
+import api, { formatErr, API } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader, Loader, Empty, StatusBadge, money } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Wallet, Plus, Bell, CheckCircle2, CreditCard, Loader2 } from "lucide-react";
+import { Wallet, Plus, Bell, CheckCircle2, CreditCard, Loader2, Settings2, Trash2, Download, BellRing } from "lucide-react";
 
 function loadRzp() {
   return new Promise((resolve) => {
@@ -21,25 +22,53 @@ function loadRzp() {
     document.body.appendChild(s);
   });
 }
+const downloadPdf = (path) => {
+  const token = localStorage.getItem("edusync_token");
+  fetch(`${API}${path}`, { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.blob()).then((b) => window.open(URL.createObjectURL(b)));
+};
 
 export default function Fees() {
   const { user } = useAuth();
   const isPrincipal = user.role === "principal";
   const [fees, setFees] = useState(null);
   const [students, setStudents] = useState([]);
+  const [components, setComponents] = useState([]);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ student_id: "", amount: 2000, month: new Date().toISOString().slice(0, 7), due_date: new Date().toISOString().slice(0, 10) });
+  const [compOpen, setCompOpen] = useState(false);
+  const [partial, setPartial] = useState(null);
+  const [partialAmt, setPartialAmt] = useState("");
+  const [form, setForm] = useState({ student_id: "", month: new Date().toISOString().slice(0, 7), due_date: new Date().toISOString().slice(0, 10), selected: {} });
+  const [newComp, setNewComp] = useState({ name: "", amount: "" });
   const [paying, setPaying] = useState(null);
 
   const load = () => api.get("/fees").then((r) => setFees(r.data));
-  useEffect(() => { load(); if (isPrincipal) api.get("/students").then((r) => setStudents(r.data)); }, []);
+  useEffect(() => {
+    load();
+    if (isPrincipal) { api.get("/students").then((r) => setStudents(r.data)); api.get("/fee-components").then((r) => setComponents(r.data)); }
+  }, []);
+
+  const selectedItems = () => components.filter((c) => form.selected[c.id]).map((c) => ({ name: c.name, amount: c.amount }));
+  const selectedTotal = selectedItems().reduce((a, i) => a + i.amount, 0);
 
   const createFee = async () => {
-    try { await api.post("/fees", { ...form, amount: Number(form.amount) }); toast.success("Fee record created"); setOpen(false); load(); }
+    const items = selectedItems();
+    if (!items.length) return toast.error("Select at least one fee component");
+    try { await api.post("/fees", { student_id: form.student_id, items, month: form.month, due_date: form.due_date }); toast.success("Fee created"); setOpen(false); setForm({ ...form, student_id: "", selected: {} }); load(); }
     catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
   };
+  const addComp = async () => {
+    if (!newComp.name || !newComp.amount) return;
+    const { data } = await api.post("/fee-components", { name: newComp.name, amount: Number(newComp.amount) });
+    setComponents([...components, data]); setNewComp({ name: "", amount: "" });
+  };
+  const delComp = async (id) => { await api.delete(`/fee-components/${id}`); setComponents(components.filter((c) => c.id !== id)); };
   const markPaid = async (id) => { await api.post(`/fees/${id}/mark-paid`); toast.success("Marked as paid"); load(); };
-  const remind = async (id) => { const { data } = await api.post(`/fees/${id}/reminder`); toast.success(data.message); };
+  const doPartial = async () => {
+    try { const { data } = await api.post(`/fees/${partial.id}/pay-partial`, { amount: Number(partialAmt) }); toast.success(`Recorded · balance ${money(data.remaining)}`); setPartial(null); setPartialAmt(""); load(); }
+    catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
+  };
+  const remind = async (id) => { const { data } = await api.post(`/fees/${id}/reminder`); (data.sms_sent ? toast.success : toast.info)(data.message); };
+  const remindAll = async () => { const { data } = await api.post("/fees/send-overdue-reminders"); toast.success(data.message); };
 
   const payOnline = async (fee) => {
     setPaying(fee.id);
@@ -50,13 +79,10 @@ export default function Fees() {
       const rzp = new window.Razorpay({
         key: data.key_id, amount: data.amount, currency: "INR", order_id: data.order_id,
         name: user.institute_name, description: `Fee ${fee.month}`,
-        prefill: { name: data.student_name, contact: data.prefill_contact },
-        theme: { color: "#2563eb" },
+        prefill: { name: data.student_name, contact: data.prefill_contact }, theme: { color: "#2563eb" },
         handler: async (resp) => {
-          try {
-            const { data: v } = await api.post("/fees/razorpay/verify", { fee_id: fee.id, ...resp });
-            toast.success(`Payment successful! Receipt ${v.receipt_no}`); load();
-          } catch (e) { toast.error("Verification failed"); }
+          try { const { data: v } = await api.post("/fees/razorpay/verify", { fee_id: fee.id, ...resp }); toast.success(`Payment successful! Receipt ${v.receipt_no}`); load(); }
+          catch (e) { toast.error("Verification failed"); }
         },
         modal: { ondismiss: () => setPaying(null) },
       });
@@ -66,66 +92,106 @@ export default function Fees() {
   };
 
   if (!fees) return <Loader />;
-  const pending = fees.filter((f) => f.status === "pending");
-  const totalPending = pending.reduce((a, f) => a + f.amount, 0);
+  const bal = (f) => Math.max(0, f.amount - (f.paid_amount || 0));
+  const totalPending = fees.filter((f) => f.status !== "paid").reduce((a, f) => a + bal(f), 0);
 
   return (
     <div>
-      <PageHeader title={isPrincipal ? "Fee Management" : "Fees & Receipts"} subtitle={`${money(totalPending)} pending across ${pending.length} records`} actions={
+      <PageHeader title={isPrincipal ? "Fee Management" : "Fees & Receipts"} subtitle={`${money(totalPending)} outstanding`} actions={
         isPrincipal && (
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild><Button data-testid="add-fee-btn" className="bg-blue-600 hover:bg-blue-700"><Plus className="h-4 w-4 mr-2" />Add Fee</Button></DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>Create Fee Record</DialogTitle></DialogHeader>
-              <div className="space-y-3">
-                <div><Label>Student</Label>
-                  <Select value={form.student_id} onValueChange={(v) => { const st = students.find((s) => s.id === v); setForm({ ...form, student_id: v, amount: st?.monthly_fee || 2000 }); }}>
-                    <SelectTrigger data-testid="fee-student"><SelectValue placeholder="Select student" /></SelectTrigger>
-                    <SelectContent>{students.map((s) => <SelectItem key={s.id} value={s.id}>{s.name} ({s.student_id})</SelectItem>)}</SelectContent>
-                  </Select>
+          <div className="flex flex-wrap gap-2">
+            <Button data-testid="remind-all-btn" variant="outline" onClick={remindAll}><BellRing className="h-4 w-4 mr-2" />Remind Overdue</Button>
+            <Dialog open={compOpen} onOpenChange={setCompOpen}>
+              <DialogTrigger asChild><Button data-testid="manage-components-btn" variant="outline"><Settings2 className="h-4 w-4 mr-2" />Fee Structure</Button></DialogTrigger>
+              <DialogContent>
+                <DialogHeader><DialogTitle>Fee Structure Components</DialogTitle></DialogHeader>
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {components.map((c) => (
+                    <div key={c.id} className="flex items-center justify-between border border-slate-200 rounded-lg px-3 py-2">
+                      <span className="text-sm font-medium">{c.name}</span>
+                      <div className="flex items-center gap-3"><span className="text-sm">₹{c.amount}</span><button data-testid={`del-comp-${c.id}`} onClick={() => delComp(c.id)} className="text-slate-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button></div>
+                    </div>
+                  ))}
+                  {components.length === 0 && <p className="text-sm text-slate-400">No components yet. Add tuition, transport, lab fee etc.</p>}
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div><Label>Amount (₹)</Label><Input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></div>
-                  <div><Label>Month</Label><Input type="month" value={form.month} onChange={(e) => setForm({ ...form, month: e.target.value })} /></div>
+                <div className="flex gap-2 pt-2 border-t">
+                  <Input data-testid="comp-name" placeholder="e.g. Transport Fee" value={newComp.name} onChange={(e) => setNewComp({ ...newComp, name: e.target.value })} />
+                  <Input data-testid="comp-amount" type="number" placeholder="₹" className="w-28" value={newComp.amount} onChange={(e) => setNewComp({ ...newComp, amount: e.target.value })} />
+                  <Button data-testid="add-comp-btn" onClick={addComp} className="bg-blue-600 hover:bg-blue-700"><Plus className="h-4 w-4" /></Button>
                 </div>
-                <div><Label>Due Date</Label><Input type="date" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} /></div>
-              </div>
-              <DialogFooter><Button data-testid="save-fee-btn" onClick={createFee} disabled={!form.student_id} className="bg-blue-600 hover:bg-blue-700">Create</Button></DialogFooter>
-            </DialogContent>
-          </Dialog>
+              </DialogContent>
+            </Dialog>
+            <Dialog open={open} onOpenChange={setOpen}>
+              <DialogTrigger asChild><Button data-testid="add-fee-btn" className="bg-blue-600 hover:bg-blue-700"><Plus className="h-4 w-4 mr-2" />Add Fee</Button></DialogTrigger>
+              <DialogContent className="max-h-[90vh] overflow-y-auto">
+                <DialogHeader><DialogTitle>Create Fee (itemized)</DialogTitle></DialogHeader>
+                <div className="space-y-3">
+                  <div><Label>Student</Label>
+                    <Select value={form.student_id} onValueChange={(v) => setForm({ ...form, student_id: v })}>
+                      <SelectTrigger data-testid="fee-student"><SelectValue placeholder="Select student" /></SelectTrigger>
+                      <SelectContent>{students.map((s) => <SelectItem key={s.id} value={s.id}>{s.name} ({s.student_id})</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Fee Components</Label>
+                    <div className="mt-1.5 space-y-1.5 border border-slate-200 rounded-lg p-3">
+                      {components.length === 0 && <p className="text-xs text-slate-400">Add components first via "Fee Structure".</p>}
+                      {components.map((c) => (
+                        <label key={c.id} className="flex items-center justify-between cursor-pointer">
+                          <span className="flex items-center gap-2 text-sm">
+                            <Checkbox data-testid={`fee-comp-${c.id}`} checked={!!form.selected[c.id]} onCheckedChange={(v) => setForm({ ...form, selected: { ...form.selected, [c.id]: v } })} />
+                            {c.name}
+                          </span>
+                          <span className="text-sm text-slate-500">₹{c.amount}</span>
+                        </label>
+                      ))}
+                      <div className="flex justify-between pt-2 border-t text-sm font-semibold"><span>Total</span><span data-testid="fee-total">{money(selectedTotal)}</span></div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><Label>Month</Label><Input data-testid="fee-month" type="month" value={form.month} onChange={(e) => setForm({ ...form, month: e.target.value })} /></div>
+                    <div><Label>Due Date</Label><Input data-testid="fee-due-date" type="date" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} /></div>
+                  </div>
+                </div>
+                <DialogFooter><Button data-testid="save-fee-btn" onClick={createFee} disabled={!form.student_id} className="bg-blue-600 hover:bg-blue-700">Create</Button></DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
         )
       } />
 
-      <Card className="border-slate-200">
+      <Card className="border-slate-200 card-premium">
         {fees.length === 0 ? <Empty icon={Wallet} title="No fee records" /> : (
           <Table>
             <TableHeader><TableRow>
               {isPrincipal && <TableHead>Student</TableHead>}
-              <TableHead>Month</TableHead><TableHead>Due</TableHead><TableHead className="text-right">Amount</TableHead>
-              <TableHead>Status</TableHead><TableHead>Receipt</TableHead><TableHead className="text-right">Action</TableHead>
+              <TableHead>Month</TableHead><TableHead className="text-right">Total</TableHead><TableHead className="text-right">Paid</TableHead><TableHead className="text-right">Balance</TableHead>
+              <TableHead>Status</TableHead><TableHead className="text-right">Action</TableHead>
             </TableRow></TableHeader>
             <TableBody>
               {fees.map((f) => (
                 <TableRow key={f.id} data-testid={`fee-row-${f.id}`}>
                   {isPrincipal && <TableCell className="font-medium">{f.student_name}</TableCell>}
                   <TableCell>{f.month}</TableCell>
-                  <TableCell className="text-slate-500">{f.due_date}</TableCell>
                   <TableCell className="text-right font-semibold">₹{f.amount}</TableCell>
+                  <TableCell className="text-right text-emerald-600">₹{f.paid_amount || 0}</TableCell>
+                  <TableCell className="text-right text-red-600">₹{bal(f)}</TableCell>
                   <TableCell><StatusBadge status={f.status} /></TableCell>
-                  <TableCell className="font-mono text-xs text-slate-400">{f.receipt_no || "—"}</TableCell>
                   <TableCell className="text-right">
-                    {f.status === "pending" ? (
-                      isPrincipal ? (
-                        <div className="flex justify-end gap-2">
-                          <Button data-testid={`remind-${f.id}`} size="sm" variant="outline" onClick={() => remind(f.id)}><Bell className="h-3.5 w-3.5 mr-1" />Remind</Button>
-                          <Button data-testid={`markpaid-${f.id}`} size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => markPaid(f.id)}><CheckCircle2 className="h-3.5 w-3.5 mr-1" />Paid</Button>
-                        </div>
+                    <div className="flex justify-end gap-1.5 flex-wrap">
+                      {f.status !== "paid" && (isPrincipal ? (
+                        <>
+                          <Button data-testid={`remind-${f.id}`} size="sm" variant="outline" onClick={() => remind(f.id)}><Bell className="h-3.5 w-3.5" /></Button>
+                          <Button data-testid={`partial-${f.id}`} size="sm" variant="outline" onClick={() => setPartial(f)}>Partial</Button>
+                          <Button data-testid={`markpaid-${f.id}`} size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => markPaid(f.id)}><CheckCircle2 className="h-3.5 w-3.5" /></Button>
+                        </>
                       ) : (
                         <Button data-testid={`pay-${f.id}`} size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={() => payOnline(f)} disabled={paying === f.id}>
-                          {paying === f.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><CreditCard className="h-3.5 w-3.5 mr-1" />Pay via UPI</>}
+                          {paying === f.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><CreditCard className="h-3.5 w-3.5 mr-1" />Pay {money(bal(f))}</>}
                         </Button>
-                      )
-                    ) : <span className="text-xs text-emerald-600 font-medium">Paid ✓</span>}
+                      ))}
+                      {(f.paid_amount > 0 || f.status === "paid") && <Button data-testid={`receipt-${f.id}`} size="sm" variant="outline" onClick={() => downloadPdf(`/fees/${f.id}/receipt`)}><Download className="h-3.5 w-3.5" /></Button>}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -133,6 +199,15 @@ export default function Fees() {
           </Table>
         )}
       </Card>
+
+      <Dialog open={!!partial} onOpenChange={(v) => !v && setPartial(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Record Partial Payment</DialogTitle></DialogHeader>
+          <p className="text-sm text-slate-500">{partial?.student_name} · Balance {partial && money(bal(partial))}</p>
+          <div><Label>Amount received (₹)</Label><Input data-testid="partial-amount" type="number" className="mt-1.5" value={partialAmt} onChange={(e) => setPartialAmt(e.target.value)} /></div>
+          <DialogFooter><Button data-testid="save-partial-btn" onClick={doPartial} disabled={!partialAmt} className="bg-blue-600 hover:bg-blue-700">Record Payment</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

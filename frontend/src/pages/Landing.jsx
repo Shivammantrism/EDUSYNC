@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { GraduationCap, ShieldCheck, QrCode, Wallet, BarChart3, Users, Loader2, Sparkles } from "lucide-react";
@@ -17,6 +18,18 @@ export default function Landing() {
   const [loading, setLoading] = useState(false);
   const [li, setLi] = useState({ identifier: "", password: "" });
   const [reg, setReg] = useState({ institute_name: "", principal_name: "", email: "", password: "", phone: "" });
+  const [fp, setFp] = useState({ open: false, step: 1, email: "", otp: "", new_password: "", loading: false });
+
+  const sendOtp = async () => {
+    setFp((s) => ({ ...s, loading: true }));
+    try { await api.post("/auth/forgot-password", { email: fp.email }); toast.success("If that email exists, an OTP has been sent."); setFp((s) => ({ ...s, step: 2, loading: false })); }
+    catch (e) { toast.error(formatErr(e.response?.data?.detail)); setFp((s) => ({ ...s, loading: false })); }
+  };
+  const doReset = async () => {
+    setFp((s) => ({ ...s, loading: true }));
+    try { await api.post("/auth/reset-password", { email: fp.email, otp: fp.otp, new_password: fp.new_password }); toast.success("Password reset! Please sign in."); setFp({ open: false, step: 1, email: "", otp: "", new_password: "", loading: false }); }
+    catch (e) { toast.error(formatErr(e.response?.data?.detail)); setFp((s) => ({ ...s, loading: false })); }
+  };
 
   const doLogin = async (e) => {
     e.preventDefault();
@@ -125,6 +138,9 @@ export default function Landing() {
                     <Input data-testid="login-password" className="mt-1.5 h-11" type="password" placeholder="••••••••" value={li.password}
                       onChange={(e) => setLi({ ...li, password: e.target.value })} required />
                   </div>
+                  <div className="text-right -mt-1.5">
+                    <button type="button" data-testid="forgot-password-link" onClick={() => setFp((s) => ({ ...s, open: true, step: 1 }))} className="text-xs font-medium text-blue-600 hover:text-blue-700">Forgot Password?</button>
+                  </div>
                   <Button data-testid="login-submit" className="w-full h-11 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg shadow-blue-600/25" disabled={loading}>
                     {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign In"}
                   </Button>
@@ -152,6 +168,26 @@ export default function Landing() {
             </Tabs>
           </Card>
         </motion.div>
+
+        <Dialog open={fp.open} onOpenChange={(v) => setFp((s) => ({ ...s, open: v }))}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Reset your password</DialogTitle></DialogHeader>
+            {fp.step === 1 ? (
+              <div className="space-y-3">
+                <p className="text-sm text-slate-500">Enter your registered email and we'll send you a 6-digit OTP.</p>
+                <div><Label>Email</Label><Input data-testid="fp-email" type="email" className="mt-1.5" value={fp.email} onChange={(e) => setFp({ ...fp, email: e.target.value })} /></div>
+                <DialogFooter><Button data-testid="fp-send-otp" onClick={sendOtp} disabled={!fp.email || fp.loading} className="bg-blue-600 hover:bg-blue-700">{fp.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send OTP"}</Button></DialogFooter>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-sm text-slate-500">Enter the OTP sent to <b>{fp.email}</b> and your new password.</p>
+                <div><Label>OTP</Label><Input data-testid="fp-otp" className="mt-1.5" value={fp.otp} onChange={(e) => setFp({ ...fp, otp: e.target.value })} placeholder="6-digit code" /></div>
+                <div><Label>New Password</Label><Input data-testid="fp-newpass" type="password" className="mt-1.5" value={fp.new_password} onChange={(e) => setFp({ ...fp, new_password: e.target.value })} /></div>
+                <DialogFooter><Button data-testid="fp-reset" onClick={doReset} disabled={!fp.otp || !fp.new_password || fp.loading} className="bg-blue-600 hover:bg-blue-700">{fp.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Reset Password"}</Button></DialogFooter>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

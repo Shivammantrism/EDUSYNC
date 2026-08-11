@@ -55,17 +55,17 @@ function NavItem({ to, label, Icon, accentKey, onClick }) {
   const accent = MODULE_ACCENTS[accentKey] || MODULE_ACCENTS.dashboard;
   return (
     <NavLink to={to} onClick={onClick} data-testid={`nav-${label.toLowerCase().replace(/[^a-z]+/g, "-")}`}
-      className="group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors duration-150">
+      className="group relative flex items-center gap-3 px-2.5 py-2.5 rounded-xl text-sm font-medium">
       {({ isActive }) => (
         <>
           {isActive && <span className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-r-full" style={{ background: accent.hex }} />}
-          <span className="flex items-center gap-3 w-full rounded-xl px-1 -mx-1"
-            style={isActive ? { color: accent.hex, background: accent.soft } : {}}>
+          <span className="flex items-center gap-3 w-full rounded-xl px-2 -mx-1 py-0.5 transition-colors"
+            style={isActive ? { background: accent.hex + "22" } : {}}>
             <span className="h-8 w-8 rounded-lg flex items-center justify-center transition-colors"
-              style={{ background: isActive ? accent.hex : accent.soft, color: isActive ? "#fff" : accent.hex }}>
+              style={{ background: isActive ? accent.hex : "rgba(255,255,255,0.06)", color: isActive ? "#fff" : accent.hex, boxShadow: isActive ? `0 6px 16px -6px ${accent.hex}` : "none" }}>
               <Icon className="h-[17px] w-[17px]" />
             </span>
-            <span className={isActive ? "" : "text-slate-600 group-hover:text-slate-900"}>{label}</span>
+            <span className={isActive ? "text-white font-semibold" : "text-slate-300 group-hover:text-white"}>{label}</span>
           </span>
         </>
       )}
@@ -84,57 +84,59 @@ export default function Layout() {
   return (
     <div className="min-h-screen flex">
       {/* Sidebar */}
-      <aside className={`fixed z-40 inset-y-0 left-0 w-72 glass border-r border-white/60 transform transition-transform duration-300 lg:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"} flex flex-col shadow-xl lg:shadow-none`}>
-        <div className="h-16 flex items-center gap-2.5 px-6 border-b border-slate-100/70">
-          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-600/30">
+      <aside className={`fixed z-40 inset-y-0 left-0 w-72 transform transition-transform duration-300 lg:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"} flex flex-col shadow-2xl`}
+        style={{ background: "linear-gradient(180deg,#0b1e3b 0%,#0d1b34 55%,#0f172a 100%)" }}>
+        <div className="h-16 flex items-center gap-2.5 px-6 border-b border-white/10">
+          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-900/50">
             <GraduationCap className="h-5 w-5 text-white" />
           </div>
           <div>
-            <p className="font-extrabold text-slate-900 leading-none font-heading text-xl tracking-tight">EduSync</p>
-            <p className="text-[10px] text-slate-400 tracking-wide mt-0.5">by Privam Solutions</p>
+            <p className="font-extrabold text-white leading-none font-heading text-xl tracking-tight">EduSync</p>
+            <p className="text-[10px] text-blue-300/70 tracking-wide mt-0.5">by Privam Solutions</p>
           </div>
         </div>
-        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
           {nav.map(([to, label, Icon, key]) => (
             <NavItem key={to} to={to} label={label} Icon={Icon} accentKey={key} onClick={() => setOpen(false)} />
           ))}
         </nav>
-        <div className="p-3 border-t border-slate-100/70">
+        <div className="p-3 border-t border-white/10">
           <button onClick={() => { logout(); navigate("/"); }} data-testid="logout-btn"
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition-colors">
-            <span className="h-8 w-8 rounded-lg bg-red-50 flex items-center justify-center"><LogOut className="h-[17px] w-[17px]" /></span> Logout
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-red-300 hover:bg-red-500/15 hover:text-red-200 transition-colors">
+            <span className="h-8 w-8 rounded-lg bg-red-500/15 flex items-center justify-center"><LogOut className="h-[17px] w-[17px]" /></span> Logout
           </button>
         </div>
       </aside>
 
-      {open && <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm z-30 lg:hidden" onClick={() => setOpen(false)} />}
+      {open && <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-30 lg:hidden" onClick={() => setOpen(false)} />}
 
       {/* Main */}
       <div className="flex-1 lg:ml-72 flex flex-col min-w-0">
-        <header className="h-16 glass border-b border-white/60 flex items-center justify-between px-4 sm:px-8 sticky top-0 z-20">
+        <header className="h-16 flex items-center justify-between px-4 sm:px-8 sticky top-0 z-20 shadow-lg"
+          style={{ background: "linear-gradient(90deg,#0b1e3b,#12234a)" }}>
           <div className="flex items-center gap-3">
-            <button className="lg:hidden text-slate-600" onClick={() => setOpen(true)} data-testid="sidebar-toggle">
+            <button className="lg:hidden text-white" onClick={() => setOpen(true)} data-testid="sidebar-toggle">
               {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
             <div>
-              <p className="font-bold text-slate-900 text-sm sm:text-base leading-none font-heading">{user?.institute_name}</p>
-              <p className="text-xs text-slate-400 mt-0.5">{roleLabel} Portal</p>
+              <p className="font-bold text-white text-sm sm:text-base leading-none font-heading">{user?.institute_name}</p>
+              <p className="text-xs text-blue-300/70 mt-0.5">{roleLabel} Portal</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
             <div className="text-right hidden sm:block">
-              <p className="text-sm font-semibold text-slate-800 leading-none">{user?.name}</p>
-              <p className="text-xs text-slate-400 mt-0.5">{user?.student_id || user?.email}</p>
+              <p className="text-sm font-semibold text-white leading-none">{user?.name}</p>
+              <p className="text-xs text-blue-300/70 mt-0.5">{user?.student_id || user?.email}</p>
             </div>
-            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold text-sm shadow-lg shadow-blue-600/25 ring-2 ring-white">
+            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-400 to-indigo-400 text-white flex items-center justify-center font-bold text-sm shadow-lg ring-2 ring-white/20">
               {user?.name?.[0]?.toUpperCase()}
             </div>
           </div>
         </header>
         <AnimatePresence mode="wait">
           <motion.main key={location.pathname}
-            initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+            initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
             className="flex-1 p-4 sm:p-8 max-w-[1600px] w-full">
             <Outlet />
           </motion.main>

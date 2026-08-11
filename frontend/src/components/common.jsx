@@ -89,12 +89,16 @@ export function Empty({ icon: Icon, title, hint }) {
 
 const statusMap = {
   paid: ["#16a34a", "rgba(22,163,74,0.12)"], pending: ["#d97706", "rgba(217,119,6,0.12)"],
+  partial: ["#ea580c", "rgba(234,88,12,0.12)"],
   present: ["#16a34a", "rgba(22,163,74,0.12)"], absent: ["#dc2626", "rgba(220,38,38,0.12)"],
   open: ["#d97706", "rgba(217,119,6,0.12)"], in_progress: ["#2563eb", "rgba(37,99,235,0.12)"],
   resolved: ["#16a34a", "rgba(22,163,74,0.12)"], approved: ["#16a34a", "rgba(22,163,74,0.12)"],
   rejected: ["#dc2626", "rgba(220,38,38,0.12)"], submitted: ["#2563eb", "rgba(37,99,235,0.12)"],
   completed: ["#16a34a", "rgba(22,163,74,0.12)"], new: ["#2563eb", "rgba(37,99,235,0.12)"],
   follow_up: ["#d97706", "rgba(217,119,6,0.12)"], converted: ["#16a34a", "rgba(22,163,74,0.12)"],
+  new_lead: ["#2563eb", "rgba(37,99,235,0.12)"], contacted: ["#4f46e5", "rgba(79,70,229,0.12)"],
+  demo_scheduled: ["#9333ea", "rgba(147,51,234,0.12)"], admitted: ["#16a34a", "rgba(22,163,74,0.12)"],
+  closed: ["#64748b", "rgba(100,116,139,0.12)"],
 };
 export function StatusBadge({ status }) {
   const [color, bg] = statusMap[status] || ["#475569", "rgba(71,85,105,0.10)"];
