@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Upload, Loader2, Save } from "lucide-react";
+import IDCard from "@/components/IDCard";
 
 export default function Branding() {
   const { institute, refreshInstitute } = useAuth();
@@ -62,7 +63,7 @@ export default function Branding() {
             <div className="grid grid-cols-3 gap-3">
               {[["classic", "Classic", "from-blue-600 to-blue-800"], ["modern", "Modern", "from-indigo-600 to-purple-700"], ["minimal", "Minimal", "from-slate-700 to-slate-900"]].map(([key, label, grad]) => (
                 <button key={key} type="button" data-testid={`idtpl-${key}`} onClick={() => setForm({ ...form, id_template: key })}
-                  className={`rounded-xl overflow-hidden border-2 text-left transition-all ${form.id_template === key ? "border-blue-500 ring-2 ring-blue-200" : "border-slate-200 hover:border-slate-300"}`}>
+                  className={`rounded-xl overflow-hidden border-2 text-left transition-all ${form.id_template === key ? "border-violet-500 ring-2 ring-violet-200" : "border-slate-200 hover:border-slate-300"}`}>
                   <div className={`h-10 bg-gradient-to-r ${grad}`} />
                   <div className="p-2 text-xs font-semibold text-slate-700">{label}</div>
                 </button>
@@ -71,6 +72,17 @@ export default function Branding() {
           </div>
         </Card>
       </div>
+
+      <Card className="p-6 border-slate-200 card-premium mt-6">
+        <div className="flex items-center gap-2 mb-1">
+          <Label>Live ID Card Preview</Label>
+          <span className="text-xs font-semibold text-violet-600 capitalize">{form.id_template} template</span>
+        </div>
+        <p className="text-xs text-slate-400 mb-6">Updates instantly as you pick a template — this is exactly how student cards will print.</p>
+        <div data-testid="idcard-live-preview" className="flex justify-center">
+          <IDCard student={{ name: "Aarav Sharma", student_id: "STU250012", age: 14, gender: "Male", parent_name: "Rajesh Sharma", template: form.id_template, photo_url: "" }} institute={form} />
+        </div>
+      </Card>
     </div>
   );
 }
