@@ -33,7 +33,7 @@ export default function Announcements() {
       <PageHeader title="Announcement Board" subtitle="Notices for teachers & students" actions={
         isPrincipal && (
           <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild><Button data-testid="add-announcement-btn" className="bg-blue-600 hover:bg-blue-700"><Plus className="h-4 w-4 mr-2" />Post Notice</Button></DialogTrigger>
+            <DialogTrigger asChild><Button data-testid="add-announcement-btn" className="btn-gradient"><Plus className="h-4 w-4 mr-2" />Post Notice</Button></DialogTrigger>
             <DialogContent>
               <DialogHeader><DialogTitle>Post Announcement</DialogTitle></DialogHeader>
               <div className="space-y-3">
@@ -46,7 +46,7 @@ export default function Announcements() {
                   </Select>
                 </div>
               </div>
-              <DialogFooter><Button data-testid="save-announcement-btn" onClick={create} disabled={!form.title} className="bg-blue-600 hover:bg-blue-700">Post</Button></DialogFooter>
+              <DialogFooter><Button data-testid="save-announcement-btn" onClick={create} disabled={!form.title} className="btn-gradient">Post</Button></DialogFooter>
             </DialogContent>
           </Dialog>
         )

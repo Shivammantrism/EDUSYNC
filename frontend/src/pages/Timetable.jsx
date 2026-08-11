@@ -48,7 +48,7 @@ export default function Timetable() {
         isPrincipal && (
           <div className="flex gap-2">
             <Button data-testid="ai-suggest-btn" variant="outline" onClick={suggest} disabled={aiLoad}>{aiLoad ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Sparkles className="h-4 w-4 mr-2" />AI Suggest</>}</Button>
-            <Button data-testid="generate-tt-btn" onClick={generate} disabled={gen} className="bg-blue-600 hover:bg-blue-700">{gen ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Wand2 className="h-4 w-4 mr-2" />Auto-Generate</>}</Button>
+            <Button data-testid="generate-tt-btn" onClick={generate} disabled={gen} className="btn-gradient">{gen ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Wand2 className="h-4 w-4 mr-2" />Auto-Generate</>}</Button>
           </div>
         )
       } />

@@ -69,7 +69,7 @@ export default function Exams() {
     <div>
       <PageHeader title="Exams & Results" subtitle={`${exams.length} exams`} actions={
         <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild><Button data-testid="add-exam-btn" className="bg-blue-600 hover:bg-blue-700"><Plus className="h-4 w-4 mr-2" />Create Exam</Button></DialogTrigger>
+          <DialogTrigger asChild><Button data-testid="add-exam-btn" className="btn-gradient"><Plus className="h-4 w-4 mr-2" />Create Exam</Button></DialogTrigger>
           <DialogContent>
             <DialogHeader><DialogTitle>Create Exam</DialogTitle></DialogHeader>
             <div className="space-y-3">
@@ -86,7 +86,7 @@ export default function Exams() {
               </div>
               <div><Label>Exam Date</Label><Input type="date" value={form.exam_date} onChange={(e) => setForm({ ...form, exam_date: e.target.value })} /></div>
             </div>
-            <DialogFooter><Button data-testid="save-exam-btn" onClick={create} disabled={!form.name || !form.batch_id} className="bg-blue-600 hover:bg-blue-700">Create</Button></DialogFooter>
+            <DialogFooter><Button data-testid="save-exam-btn" onClick={create} disabled={!form.name || !form.batch_id} className="btn-gradient">Create</Button></DialogFooter>
           </DialogContent>
         </Dialog>
       } />
@@ -120,7 +120,7 @@ export default function Exams() {
             ))}
             {students.length === 0 && <p className="text-sm text-slate-400">No students in this batch.</p>}
           </div>
-          <DialogFooter><Button data-testid="save-marks-btn" onClick={saveMarks} className="bg-blue-600 hover:bg-blue-700">Save & Rank</Button></DialogFooter>
+          <DialogFooter><Button data-testid="save-marks-btn" onClick={saveMarks} className="btn-gradient">Save & Rank</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

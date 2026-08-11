@@ -66,11 +66,11 @@ export default function Salary() {
                   </div>
                   <p className="text-xs text-slate-400">LWP is auto-calculated on payslip: gross ÷ days-in-month × unapproved (rejected) leave days.</p>
                 </div>
-                <DialogFooter><Button data-testid="save-struct-btn" onClick={saveStruct} disabled={!struct.teacher_id} className="bg-blue-600 hover:bg-blue-700">Save Structure</Button></DialogFooter>
+                <DialogFooter><Button data-testid="save-struct-btn" onClick={saveStruct} disabled={!struct.teacher_id} className="btn-gradient">Save Structure</Button></DialogFooter>
               </DialogContent>
             </Dialog>
             <Dialog open={open} onOpenChange={setOpen}>
-              <DialogTrigger asChild><Button data-testid="add-salary-btn" className="bg-blue-600 hover:bg-blue-700"><Plus className="h-4 w-4 mr-2" />Generate Salary</Button></DialogTrigger>
+              <DialogTrigger asChild><Button data-testid="add-salary-btn" className="btn-gradient"><Plus className="h-4 w-4 mr-2" />Generate Salary</Button></DialogTrigger>
               <DialogContent>
                 <DialogHeader><DialogTitle>Generate Monthly Salary</DialogTitle></DialogHeader>
                 <div className="space-y-3">
@@ -83,7 +83,7 @@ export default function Salary() {
                   <div><Label>Month</Label><Input data-testid="salary-month" type="month" value={form.month} onChange={(e) => setForm({ ...form, month: e.target.value })} /></div>
                   <p className="text-xs text-slate-400">Uses the teacher's configured structure and deducts LWP for unapproved leaves in that month.</p>
                 </div>
-                <DialogFooter><Button data-testid="save-salary-btn" onClick={create} disabled={!form.teacher_id} className="bg-blue-600 hover:bg-blue-700">Generate</Button></DialogFooter>
+                <DialogFooter><Button data-testid="save-salary-btn" onClick={create} disabled={!form.teacher_id} className="btn-gradient">Generate</Button></DialogFooter>
               </DialogContent>
             </Dialog>
           </div>

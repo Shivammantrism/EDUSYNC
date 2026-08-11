@@ -6,7 +6,7 @@ import { MODULE_ACCENTS } from "@/lib/modules";
 import {
   LayoutDashboard, Users, GraduationCap, CalendarCheck, Wallet, FileText,
   BookOpen, Megaphone, MessageSquareWarning, UserPlus, CalendarDays, Banknote,
-  LogOut, Menu, X, PlaneTakeoff, IdCard,
+  LogOut, Menu, X, PlaneTakeoff, IdCard, Settings,
 } from "lucide-react";
 
 const NAV = {
@@ -25,6 +25,7 @@ const NAV = {
     ["/app/announcements", "Announcements", Megaphone, "announcements"],
     ["/app/complaints", "Complaints", MessageSquareWarning, "complaints"],
     ["/app/enquiries", "Admission Enquiries", UserPlus, "enquiries"],
+    ["/app/settings", "Institute Branding", Settings, "settings"],
   ],
   teacher: [
     ["/app/dashboard", "Dashboard", LayoutDashboard, "dashboard"],
@@ -85,14 +86,14 @@ export default function Layout() {
     <div className="min-h-screen flex">
       {/* Sidebar */}
       <aside className={`fixed z-40 inset-y-0 left-0 w-72 transform transition-transform duration-300 lg:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"} flex flex-col shadow-2xl`}
-        style={{ background: "linear-gradient(180deg,#0b1e3b 0%,#0d1b34 55%,#0f172a 100%)" }}>
-        <div className="h-16 flex items-center gap-2.5 px-6 border-b border-white/10">
-          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-900/50">
-            <GraduationCap className="h-5 w-5 text-white" />
+        style={{ background: "linear-gradient(180deg,#0b1e3b 0%,#141d47 52%,#1a1240 100%)" }}>
+        <div className="h-16 flex items-center gap-2.5 px-5 border-b border-white/10">
+          <div className="h-11 w-11 rounded-xl bg-white p-1 flex items-center justify-center shadow-lg">
+            <img src="/edusync-logo.png" alt="EduSync" className="h-full w-full object-contain" />
           </div>
           <div>
-            <p className="font-extrabold text-white leading-none font-heading text-xl tracking-tight">EduSync</p>
-            <p className="text-[10px] text-blue-300/70 tracking-wide mt-0.5">by Privam Solutions</p>
+            <p className="font-extrabold leading-none font-heading text-xl tracking-tight bg-gradient-to-r from-emerald-300 via-blue-200 to-violet-300 bg-clip-text text-transparent">EduSync</p>
+            <p className="text-[10px] text-blue-300/70 tracking-wide mt-0.5">Smarter Institutes. Brighter Futures.</p>
           </div>
         </div>
         <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
@@ -113,7 +114,7 @@ export default function Layout() {
       {/* Main */}
       <div className="flex-1 lg:ml-72 flex flex-col min-w-0">
         <header className="h-16 flex items-center justify-between px-4 sm:px-8 sticky top-0 z-20 shadow-lg"
-          style={{ background: "linear-gradient(90deg,#0b1e3b,#12234a)" }}>
+          style={{ background: "linear-gradient(90deg,#0b1e3b,#1a1240)" }}>
           <div className="flex items-center gap-3">
             <button className="lg:hidden text-white" onClick={() => setOpen(true)} data-testid="sidebar-toggle">
               {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -128,7 +129,7 @@ export default function Layout() {
               <p className="text-sm font-semibold text-white leading-none">{user?.name}</p>
               <p className="text-xs text-blue-300/70 mt-0.5">{user?.student_id || user?.email}</p>
             </div>
-            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-400 to-indigo-400 text-white flex items-center justify-center font-bold text-sm shadow-lg ring-2 ring-white/20">
+            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-emerald-400 via-blue-500 to-violet-500 text-white flex items-center justify-center font-bold text-sm shadow-lg ring-2 ring-white/20">
               {user?.name?.[0]?.toUpperCase()}
             </div>
           </div>

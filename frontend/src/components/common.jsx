@@ -41,7 +41,7 @@ export function AnimatedNumber({ value, prefix = "", suffix = "", decimals = 0 }
   return <span>{prefix}{formatted}{suffix}</span>;
 }
 
-export function StatCard({ label, value, sub, icon: Icon, accent = "#2563eb", prefix = "", suffix = "", decimals = 0, testid, delay = 0 }) {
+export function StatCard({ label, value, sub, icon: Icon, accent = "#1e3a8a", prefix = "", suffix = "", decimals = 0, testid, delay = 0 }) {
   const isNum = typeof value === "number";
   return (
     <div data-testid={testid} className="card-premium rounded-2xl p-6 relative overflow-hidden fade-up" style={{ animationDelay: `${delay}ms` }}>
@@ -69,8 +69,8 @@ export function Loader({ label = "Loading" }) {
   return (
     <div className="flex flex-col items-center justify-center py-24 gap-4">
       <div className="relative h-12 w-12">
-        <div className="absolute inset-0 rounded-full border-[3px] border-blue-100" />
-        <div className="absolute inset-0 rounded-full border-[3px] border-transparent border-t-blue-600 spin-ring" />
+        <div className="absolute inset-0 rounded-full border-[3px] border-violet-100" />
+        <div className="absolute inset-0 rounded-full border-[3px] border-transparent border-t-violet-600 spin-ring" />
       </div>
       <p className="text-sm text-slate-400 tracking-wide">{label}...</p>
     </div>

@@ -57,7 +57,7 @@ export default function Students() {
       <PageHeader title="Students" subtitle={`${students.length} enrolled`} actions={
         user.role === "principal" && (
           <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild><Button data-testid="add-student-btn" className="bg-blue-600 hover:bg-blue-700"><UserPlus className="h-4 w-4 mr-2" />Register Student</Button></DialogTrigger>
+            <DialogTrigger asChild><Button data-testid="add-student-btn" className="btn-gradient"><UserPlus className="h-4 w-4 mr-2" />Register Student</Button></DialogTrigger>
             <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
               <DialogHeader><DialogTitle>Register New Student</DialogTitle></DialogHeader>
               <div className="space-y-3">
@@ -103,7 +103,7 @@ export default function Students() {
                 </div>
                 <p className="text-xs text-slate-400">Default login password: <span className="font-mono">student123</span></p>
               </div>
-              <DialogFooter><Button data-testid="save-student-btn" onClick={save} disabled={saving || !form.name} className="bg-blue-600 hover:bg-blue-700">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Register"}</Button></DialogFooter>
+              <DialogFooter><Button data-testid="save-student-btn" onClick={save} disabled={saving || !form.name} className="btn-gradient">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Register"}</Button></DialogFooter>
             </DialogContent>
           </Dialog>
         )

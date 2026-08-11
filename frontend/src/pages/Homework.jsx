@@ -44,7 +44,7 @@ export default function Homework() {
       <PageHeader title="Homework & Assignments" subtitle={`${hw.length} active`} actions={
         isStaff && (
           <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild><Button data-testid="add-hw-btn" className="bg-blue-600 hover:bg-blue-700"><Plus className="h-4 w-4 mr-2" />Assign Homework</Button></DialogTrigger>
+            <DialogTrigger asChild><Button data-testid="add-hw-btn" className="btn-gradient"><Plus className="h-4 w-4 mr-2" />Assign Homework</Button></DialogTrigger>
             <DialogContent>
               <DialogHeader><DialogTitle>Assign Homework</DialogTitle></DialogHeader>
               <div className="space-y-3">
@@ -58,7 +58,7 @@ export default function Homework() {
                 </div>
                 <div><Label>Deadline</Label><Input type="date" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} /></div>
               </div>
-              <DialogFooter><Button data-testid="save-hw-btn" onClick={create} disabled={!form.title || !form.batch_id} className="bg-blue-600 hover:bg-blue-700">Assign</Button></DialogFooter>
+              <DialogFooter><Button data-testid="save-hw-btn" onClick={create} disabled={!form.title || !form.batch_id} className="btn-gradient">Assign</Button></DialogFooter>
             </DialogContent>
           </Dialog>
         )
@@ -77,7 +77,7 @@ export default function Homework() {
                 ) : h.my_submission ? (
                   <div className="flex items-center gap-2 text-sm text-emerald-600 font-medium"><CheckCircle2 className="h-4 w-4" />{h.my_submission.status === "completed" ? "Reviewed" : "Submitted"}</div>
                 ) : (
-                  <Button data-testid={`submit-hw-${h.id}`} size="sm" className="w-full bg-blue-600 hover:bg-blue-700" onClick={() => setSubmitFor(h)}><Send className="h-3.5 w-3.5 mr-1" />Submit Work</Button>
+                  <Button data-testid={`submit-hw-${h.id}`} size="sm" className="w-full btn-gradient" onClick={() => setSubmitFor(h)}><Send className="h-3.5 w-3.5 mr-1" />Submit Work</Button>
                 )}
               </div>
             </Card>
@@ -107,7 +107,7 @@ export default function Homework() {
         <DialogContent>
           <DialogHeader><DialogTitle>Submit — {submitFor?.title}</DialogTitle></DialogHeader>
           <Textarea data-testid="submission-content" placeholder="Type your answer or notes..." value={content} onChange={(e) => setContent(e.target.value)} rows={5} />
-          <DialogFooter><Button data-testid="confirm-submit-btn" onClick={submit} disabled={!content} className="bg-blue-600 hover:bg-blue-700">Submit</Button></DialogFooter>
+          <DialogFooter><Button data-testid="confirm-submit-btn" onClick={submit} disabled={!content} className="btn-gradient">Submit</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

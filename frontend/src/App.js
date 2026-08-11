@@ -20,6 +20,8 @@ import Announcements from "@/pages/Announcements";
 import Complaints from "@/pages/Complaints";
 import Enquiries from "@/pages/Enquiries";
 import IDCardPage from "@/pages/IDCardPage";
+import Branding from "@/pages/Branding";
+import BulkIDCards from "@/pages/BulkIDCards";
 import { Loader } from "@/components/common";
 
 function Protected({ children }) {
@@ -61,6 +63,8 @@ function App() {
               <Route path="complaints" element={<Complaints />} />
               <Route path="enquiries" element={<Enquiries />} />
               <Route path="idcard" element={<IDCardPage />} />
+              <Route path="settings" element={<Branding />} />
+              <Route path="print-ids/:batchId" element={<BulkIDCards />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

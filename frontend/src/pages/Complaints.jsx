@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import api, { formatErr } from "@/lib/api";
+import api, { fileUrl, formatErr } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader, Loader, Empty, StatusBadge } from "@/components/common";
 import { Button } from "@/components/ui/button";
@@ -10,21 +10,30 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { MessageSquareWarning, Plus } from "lucide-react";
+import { MessageSquareWarning, Plus, Paperclip, FileText, Loader2 } from "lucide-react";
+
+const DIRECTIONS = { principal: "Principal", teacher: "Class Teacher", parent: "Parent" };
 
 export default function Complaints() {
   const { user } = useAuth();
   const isPrincipal = user.role === "principal";
   const [items, setItems] = useState(null);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ subject: "", description: "", category: "general" });
+  const [form, setForm] = useState({ subject: "", description: "", category: "general", direction: "principal", attachment_url: "" });
+  const [uploading, setUploading] = useState(false);
   const [manage, setManage] = useState(null);
   const [resp, setResp] = useState({ status: "in_progress", response: "" });
 
   const load = () => api.get("/complaints").then((r) => setItems(r.data));
   useEffect(() => { load(); }, []);
+
+  const uploadPdf = async (file) => {
+    setUploading(true);
+    try { const fd = new FormData(); fd.append("file", file); const { data } = await api.post("/upload", fd); setForm((f) => ({ ...f, attachment_url: data.url })); toast.success("PDF attached"); }
+    catch (e) { toast.error("Upload failed"); } finally { setUploading(false); }
+  };
   const create = async () => {
-    try { await api.post("/complaints", form); toast.success("Complaint raised to Principal"); setOpen(false); setForm({ subject: "", description: "", category: "general" }); load(); }
+    try { await api.post("/complaints", form); toast.success(`Complaint routed to ${DIRECTIONS[form.direction]}`); setOpen(false); setForm({ subject: "", description: "", category: "general", direction: "principal", attachment_url: "" }); load(); }
     catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
   };
   const update = async () => {
@@ -33,19 +42,35 @@ export default function Complaints() {
   };
 
   if (!items) return <Loader />;
+  const dirOptions = user.role === "student" ? ["principal", "teacher"] : ["principal", "parent"];
+
   return (
     <div>
-      <PageHeader title="Complaint Management" subtitle={isPrincipal ? "Resolve complaints from teachers & students" : "Raise issues to the Principal"} actions={
+      <PageHeader title="Complaint Management" subtitle={isPrincipal ? "Resolve & track complaints from teachers & students" : "Raise & route issues with status tracking"} actions={
         !isPrincipal && (
           <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild><Button data-testid="add-complaint-btn" className="bg-blue-600 hover:bg-blue-700"><Plus className="h-4 w-4 mr-2" />Raise Complaint</Button></DialogTrigger>
+            <DialogTrigger asChild><Button data-testid="add-complaint-btn" className="btn-gradient"><Plus className="h-4 w-4 mr-2" />Raise Complaint</Button></DialogTrigger>
             <DialogContent>
               <DialogHeader><DialogTitle>Raise a Complaint</DialogTitle></DialogHeader>
               <div className="space-y-3">
                 <div><Label>Subject</Label><Input data-testid="complaint-subject" value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} /></div>
+                <div><Label>Route To</Label>
+                  <Select value={form.direction} onValueChange={(v) => setForm({ ...form, direction: v })}>
+                    <SelectTrigger data-testid="complaint-direction"><SelectValue /></SelectTrigger>
+                    <SelectContent>{dirOptions.map((d) => <SelectItem key={d} value={d}>{DIRECTIONS[d]}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
                 <div><Label>Description</Label><Textarea data-testid="complaint-desc" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={4} /></div>
+                <div>
+                  <Label>Attach PDF (optional)</Label>
+                  <label className="mt-1.5 flex items-center gap-2 text-sm px-3 py-2 border border-dashed rounded-lg cursor-pointer hover:bg-slate-50 text-slate-600">
+                    {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
+                    {form.attachment_url ? "PDF attached — replace" : "Choose PDF file"}
+                    <input data-testid="complaint-pdf-input" type="file" accept="application/pdf" className="hidden" onChange={(e) => e.target.files[0] && uploadPdf(e.target.files[0])} />
+                  </label>
+                </div>
               </div>
-              <DialogFooter><Button data-testid="save-complaint-btn" onClick={create} disabled={!form.subject} className="bg-blue-600 hover:bg-blue-700">Submit</Button></DialogFooter>
+              <DialogFooter><Button data-testid="save-complaint-btn" onClick={create} disabled={!form.subject || uploading} className="btn-gradient">Submit</Button></DialogFooter>
             </DialogContent>
           </Dialog>
         )
@@ -56,8 +81,18 @@ export default function Complaints() {
             <Card key={c.id} data-testid={`complaint-${c.id}`} className="p-5 border-slate-200">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
-                  <div className="flex items-center gap-3"><p className="font-bold text-slate-900">{c.subject}</p><StatusBadge status={c.status} /></div>
+                  <div className="flex items-center flex-wrap gap-2">
+                    <p className="font-bold text-slate-900">{c.subject}</p>
+                    <StatusBadge status={c.status} />
+                    {c.direction && <span className="text-[11px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-full px-2 py-0.5">→ {DIRECTIONS[c.direction] || c.direction}</span>}
+                  </div>
                   <p className="text-sm text-slate-600 mt-1">{c.description}</p>
+                  {c.attachment_url && (
+                    <a data-testid={`complaint-attachment-${c.id}`} href={fileUrl(c.attachment_url)} target="_blank" rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 mt-2">
+                      <FileText className="h-3.5 w-3.5" /> View attached PDF
+                    </a>
+                  )}
                   <p className="text-xs text-slate-400 mt-2">By {c.raised_by} ({c.raised_by_role}) · {new Date(c.created_at).toLocaleDateString()}</p>
                   {c.response && <p className="text-sm text-blue-700 bg-blue-50 rounded-lg p-2 mt-2">Principal: {c.response}</p>}
                 </div>
@@ -80,7 +115,7 @@ export default function Complaints() {
             </div>
             <div><Label>Response</Label><Textarea data-testid="complaint-response" value={resp.response} onChange={(e) => setResp({ ...resp, response: e.target.value })} rows={3} /></div>
           </div>
-          <DialogFooter><Button data-testid="update-complaint-btn" onClick={update} className="bg-blue-600 hover:bg-blue-700">Update</Button></DialogFooter>
+          <DialogFooter><Button data-testid="update-complaint-btn" onClick={update} className="btn-gradient">Update</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

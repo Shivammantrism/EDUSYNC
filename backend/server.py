@@ -139,6 +139,54 @@ def send_sms(to, body):
         return False
 
 
+def _logo_bytes(inst):
+    try:
+        if inst and inst.get("logo_path"):
+            data, _ = get_object(inst["logo_path"])
+            return data
+    except Exception as e:
+        logger.warning(f"institute logo fetch failed: {e}")
+    try:
+        p = ROOT_DIR / "edusync_logo.png"
+        if p.exists():
+            return p.read_bytes()
+    except Exception:
+        pass
+    return None
+
+
+def draw_letterhead(c, inst, w, h, subtitle):
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.lib.utils import ImageReader
+    c.setFillColor(colors.HexColor("#0b1e3b"))
+    c.rect(0, h - 3.6 * cm, w, 3.6 * cm, fill=1, stroke=0)
+    c.setFillColor(colors.HexColor("#2563EB"))
+    c.rect(0, h - 3.72 * cm, w, 0.12 * cm, fill=1, stroke=0)
+    tx = 2 * cm
+    lb = _logo_bytes(inst)
+    if lb:
+        try:
+            c.drawImage(ImageReader(io.BytesIO(lb)), 1.3 * cm, h - 3.1 * cm, width=2.5 * cm, height=2.5 * cm,
+                        mask='auto', preserveAspectRatio=True)
+            tx = 4.3 * cm
+        except Exception:
+            pass
+    c.setFillColor(colors.white)
+    c.setFont("Helvetica-Bold", 20)
+    c.drawString(tx, h - 1.4 * cm, ((inst.get("name") if inst else None) or "EduSync")[:42])
+    c.setFont("Helvetica", 8.5)
+    y = h - 2.0 * cm
+    if inst and inst.get("address"):
+        c.drawString(tx, y, str(inst["address"])[:85]); y -= 0.42 * cm
+    line2 = " | ".join(x for x in [inst.get("phone") if inst else None, inst.get("email") if inst else None] if x)
+    if line2:
+        c.drawString(tx, y, line2[:85]); y -= 0.42 * cm
+    c.setFont("Helvetica-Oblique", 10)
+    c.drawString(tx, h - 3.25 * cm, subtitle)
+    c.setFillColor(colors.HexColor("#0F172A"))
+
+
 # ---------------------------------------------------------------- auth utils
 def hash_pw(pw): return bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
 def verify_pw(pw, h):
@@ -233,6 +281,8 @@ class BatchIn(BaseModel):
     teacher_id: Optional[str] = ""
     schedule_days: List[str] = []
     room: Optional[str] = ""
+    class_name: Optional[str] = ""
+    section: Optional[str] = ""
 
 
 class AttendanceScan(BaseModel):
@@ -320,6 +370,8 @@ class ComplaintIn(BaseModel):
     subject: str
     description: str
     category: Optional[str] = "general"
+    direction: Optional[str] = "principal"
+    attachment_url: Optional[str] = ""
 
 
 class ComplaintUpdate(BaseModel):
@@ -341,6 +393,16 @@ class EnquiryUpdate(BaseModel):
     assigned_to: Optional[str] = None
     follow_up_date: Optional[str] = None
     notes: Optional[str] = None
+
+
+class InstituteUpdate(BaseModel):
+    name: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    logo_url: Optional[str] = None
+    logo_path: Optional[str] = None
+    id_template: Optional[str] = None
 
 
 # ---------------------------------------------------------------- auth routes
@@ -966,9 +1028,12 @@ async def del_announcement(aid: str, user=Depends(require("principal"))):
 # ---------------------------------------------------------------- complaints
 @api.get("/complaints")
 async def list_complaints(user=Depends(get_current_user)):
-    q = scope(user)
-    if user["role"] in ("teacher", "student"):
-        q["raised_by_id"] = user["id"]
+    if user["role"] == "student":
+        q = {"institute_id": user["institute_id"], "raised_by_id": user["id"]}
+    elif user["role"] == "teacher":
+        q = {"institute_id": user["institute_id"], "$or": [{"raised_by_id": user["id"]}, {"direction": {"$in": ["teacher", "both"]}}]}
+    else:
+        q = scope(user)
     return await db.complaints.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
 
 
@@ -992,7 +1057,10 @@ async def update_complaint(cid: str, body: ComplaintUpdate, user=Depends(require
 # ---------------------------------------------------------------- enquiries
 @api.get("/enquiries")
 async def list_enquiries(user=Depends(require("principal", "teacher"))):
-    return await db.enquiries.find(scope(user), {"_id": 0}).sort("created_at", -1).to_list(1000)
+    q = scope(user)
+    if user["role"] == "teacher":
+        q["assigned_to"] = user["id"]
+    return await db.enquiries.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
 
 
 @api.post("/enquiries")
@@ -1083,15 +1151,8 @@ async def report_card(sid: str, user=Depends(get_current_user)):
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     w, h = A4
-    c.setFillColor(colors.HexColor("#2563EB"))
-    c.rect(0, h - 3 * cm, w, 3 * cm, fill=1, stroke=0)
-    c.setFillColor(colors.white)
-    c.setFont("Helvetica-Bold", 20)
-    c.drawString(2 * cm, h - 1.7 * cm, inst["name"] if inst else "EduSync")
-    c.setFont("Helvetica", 11)
-    c.drawString(2 * cm, h - 2.4 * cm, "Student Performance Report Card")
-    c.setFillColor(colors.HexColor("#0F172A"))
-    y = h - 4.5 * cm
+    draw_letterhead(c, inst, w, h, "Student Performance Report Card")
+    y = h - 4.7 * cm
     c.setFont("Helvetica-Bold", 13)
     c.drawString(2 * cm, y, s["name"])
     c.setFont("Helvetica", 10)
@@ -1142,15 +1203,8 @@ async def salary_slip(sid: str, user=Depends(require("principal", "teacher"))):
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     w, h = A4
-    c.setFillColor(colors.HexColor("#2563EB"))
-    c.rect(0, h - 3 * cm, w, 3 * cm, fill=1, stroke=0)
-    c.setFillColor(colors.white)
-    c.setFont("Helvetica-Bold", 20)
-    c.drawString(2 * cm, h - 1.7 * cm, inst["name"] if inst else "EduSync")
-    c.setFont("Helvetica", 11)
-    c.drawString(2 * cm, h - 2.4 * cm, f"Salary Slip — {sal['month']}")
-    c.setFillColor(colors.HexColor("#0F172A"))
-    y = h - 4.5 * cm
+    draw_letterhead(c, inst, w, h, f"Salary Slip - {sal['month']}")
+    y = h - 4.7 * cm
     rows = [("Employee", sal["teacher_name"]), ("Month", sal["month"]),
             ("Base Pay", f"Rs. {sal.get('base', sal['amount'])}"), ("HRA", f"Rs. {sal.get('hra', 0)}"),
             ("Allowances", f"Rs. {sal.get('allowances', 0)}"), ("Gross", f"Rs. {sal.get('gross', sal['amount'])}"),
@@ -1216,9 +1270,10 @@ async def teacher_dashboard(user=Depends(require("teacher"))):
     my_att = await db.teacher_attendance.find_one({"teacher_id": user["id"], "date": d})
     pending_leaves = await db.leaves.count_documents({"teacher_id": user["id"], "status": "pending"})
     homework = await db.homework.count_documents({"batch_id": {"$in": bids}}) if bids else 0
+    assigned_leads = await db.enquiries.find({"institute_id": iid, "assigned_to": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(200)
     return {"my_batches": len(batches), "my_students": students, "attendance_marked": bool(my_att),
             "leave_balance": user.get("leave_balance", 0), "pending_leaves": pending_leaves, "homework": homework,
-            "batches": batches}
+            "batches": batches, "assigned_leads": assigned_leads}
 
 
 @api.get("/dashboard/student")
@@ -1337,10 +1392,8 @@ async def fee_receipt(fee_id: str, user=Depends(get_current_user)):
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     w, h = A4
-    c.setFillColor(colors.HexColor("#2563EB")); c.rect(0, h - 3.2 * cm, w, 3.2 * cm, fill=1, stroke=0)
-    c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 22); c.drawString(2 * cm, h - 1.7 * cm, inst["name"] if inst else "EduSync")
-    c.setFont("Helvetica", 11); c.drawString(2 * cm, h - 2.5 * cm, "Official Fee Receipt")
-    c.setFillColor(colors.HexColor("#0F172A")); y = h - 4.6 * cm
+    draw_letterhead(c, inst, w, h, "Official Fee Receipt")
+    y = h - 4.8 * cm
     c.setFont("Helvetica", 10)
     c.drawString(2 * cm, y, f"Receipt No: {fee.get('receipt_no','-')}")
     c.drawRightString(w - 2 * cm, y, f"Date: {datetime.now().strftime('%d %b %Y')}"); y -= 0.7 * cm
@@ -1432,6 +1485,20 @@ async def cron_fee_reminders(authorization: Optional[str] = Header(None)):
         raise HTTPException(401, "Unauthorized")
     asyncio.create_task(_send_overdue())
     return {"ok": True, "queued": True}
+
+
+# ---------------------------------------------------------------- institute branding
+@api.get("/institute")
+async def get_institute(user=Depends(get_current_user)):
+    inst = await db.institutes.find_one({"id": user["institute_id"]}, {"_id": 0})
+    return inst or {}
+
+
+@api.put("/institute")
+async def update_institute(body: InstituteUpdate, user=Depends(require("principal"))):
+    upd = {k: v for k, v in body.model_dump().items() if v is not None}
+    await db.institutes.update_one({"id": user["institute_id"]}, {"$set": upd})
+    return await db.institutes.find_one({"id": user["institute_id"]}, {"_id": 0})
 
 
 # ---------------------------------------------------------------- seed

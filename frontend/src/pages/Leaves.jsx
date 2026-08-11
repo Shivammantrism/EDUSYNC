@@ -33,7 +33,7 @@ export default function Leaves() {
       <PageHeader title={isPrincipal ? "Leave Requests" : "My Leaves"} subtitle={isPrincipal ? "Approve or reject teacher leaves" : `Balance: ${user.leave_balance ?? ""} — apply for leave`} actions={
         user.role === "teacher" && (
           <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild><Button data-testid="apply-leave-btn" className="bg-blue-600 hover:bg-blue-700"><Plus className="h-4 w-4 mr-2" />Apply for Leave</Button></DialogTrigger>
+            <DialogTrigger asChild><Button data-testid="apply-leave-btn" className="btn-gradient"><Plus className="h-4 w-4 mr-2" />Apply for Leave</Button></DialogTrigger>
             <DialogContent>
               <DialogHeader><DialogTitle>Apply for Leave</DialogTitle></DialogHeader>
               <div className="space-y-3">
@@ -43,7 +43,7 @@ export default function Leaves() {
                 </div>
                 <div><Label>Reason</Label><Textarea data-testid="leave-reason" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} /></div>
               </div>
-              <DialogFooter><Button data-testid="save-leave-btn" onClick={apply} disabled={!form.from_date || !form.to_date} className="bg-blue-600 hover:bg-blue-700">Apply</Button></DialogFooter>
+              <DialogFooter><Button data-testid="save-leave-btn" onClick={apply} disabled={!form.from_date || !form.to_date} className="btn-gradient">Apply</Button></DialogFooter>
             </DialogContent>
           </Dialog>
         )

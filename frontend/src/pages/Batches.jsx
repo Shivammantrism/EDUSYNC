@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import api, { formatErr } from "@/lib/api";
 import { PageHeader, Loader, Empty } from "@/components/common";
 import { Button } from "@/components/ui/button";
@@ -8,21 +9,24 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { GraduationCap, Plus, Users, Trash2 } from "lucide-react";
+import { GraduationCap, Plus, Users, Trash2, Printer } from "lucide-react";
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const CLASSES = ["Nursery", "LKG", "UKG", "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th", "10th", "11th", "12th"];
+const SECTIONS = ["A", "B", "C", "D"];
 
 export default function Batches() {
+  const navigate = useNavigate();
   const [batches, setBatches] = useState(null);
   const [teachers, setTeachers] = useState([]);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", subject: "", teacher_id: "", room: "", schedule_days: DAYS.slice(0, 5) });
+  const [form, setForm] = useState({ name: "", subject: "", teacher_id: "", room: "", class_name: "", section: "", schedule_days: DAYS.slice(0, 5) });
 
   const load = () => api.get("/batches").then((r) => setBatches(r.data));
   useEffect(() => { load(); api.get("/teachers").then((r) => setTeachers(r.data)); }, []);
 
   const save = async () => {
-    try { await api.post("/batches", form); toast.success("Batch created"); setOpen(false); setForm({ name: "", subject: "", teacher_id: "", room: "", schedule_days: DAYS.slice(0, 5) }); load(); }
+    try { await api.post("/batches", form); toast.success("Batch created"); setOpen(false); setForm({ name: "", subject: "", teacher_id: "", room: "", class_name: "", section: "", schedule_days: DAYS.slice(0, 5) }); load(); }
     catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
   };
   const del = async (id) => { await api.delete(`/batches/${id}`); toast.success("Deleted"); load(); };
@@ -32,12 +36,26 @@ export default function Batches() {
     <div>
       <PageHeader title="Batches & Classes" subtitle={`${batches.length} active batches`} actions={
         <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild><Button data-testid="add-batch-btn" className="bg-blue-600 hover:bg-blue-700"><Plus className="h-4 w-4 mr-2" />New Batch</Button></DialogTrigger>
+          <DialogTrigger asChild><Button data-testid="add-batch-btn" className="btn-gradient"><Plus className="h-4 w-4 mr-2" />New Batch</Button></DialogTrigger>
           <DialogContent>
             <DialogHeader><DialogTitle>Create Batch</DialogTitle></DialogHeader>
             <div className="space-y-3">
               <div><Label>Batch Name</Label><Input data-testid="batch-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Class 10-A" /></div>
               <div><Label>Subject</Label><Input data-testid="batch-subject" value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} /></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><Label>Class</Label>
+                  <Select value={form.class_name} onValueChange={(v) => setForm({ ...form, class_name: v })}>
+                    <SelectTrigger data-testid="batch-class"><SelectValue placeholder="Nursery–12th" /></SelectTrigger>
+                    <SelectContent>{CLASSES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <div><Label>Section</Label>
+                  <Select value={form.section} onValueChange={(v) => setForm({ ...form, section: v })}>
+                    <SelectTrigger data-testid="batch-section"><SelectValue placeholder="A / B / C" /></SelectTrigger>
+                    <SelectContent>{SECTIONS.map((s) => <SelectItem key={s} value={s}>Section {s}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+              </div>
               <div><Label>Class Teacher</Label>
                 <Select value={form.teacher_id} onValueChange={(v) => setForm({ ...form, teacher_id: v })}>
                   <SelectTrigger data-testid="batch-teacher"><SelectValue placeholder="Assign teacher" /></SelectTrigger>
@@ -46,7 +64,7 @@ export default function Batches() {
               </div>
               <div><Label>Room</Label><Input value={form.room} onChange={(e) => setForm({ ...form, room: e.target.value })} placeholder="Room 101" /></div>
             </div>
-            <DialogFooter><Button data-testid="save-batch-btn" onClick={save} disabled={!form.name} className="bg-blue-600 hover:bg-blue-700">Create</Button></DialogFooter>
+            <DialogFooter><Button data-testid="save-batch-btn" onClick={save} disabled={!form.name} className="btn-gradient">Create</Button></DialogFooter>
           </DialogContent>
         </Dialog>
       } />
@@ -59,11 +77,20 @@ export default function Batches() {
                 <button data-testid={`del-batch-${b.id}`} onClick={() => del(b.id)} className="text-slate-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
               </div>
               <p className="font-bold text-slate-900 font-heading">{b.name}</p>
-              <p className="text-sm text-slate-500">{b.subject || "—"} · {b.room}</p>
+              {(b.class_name || b.section) && (
+                <span data-testid={`batch-classsec-${b.id}`} className="inline-flex items-center gap-1 mt-1 text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-100 rounded-full px-2 py-0.5">
+                  {b.class_name || "—"}{b.section ? ` · Sec ${b.section}` : ""}
+                </span>
+              )}
+              <p className="text-sm text-slate-500 mt-1">{b.subject || "—"} · {b.room}</p>
               <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between text-sm">
                 <span className="text-slate-500 flex items-center gap-1"><Users className="h-4 w-4" />{b.student_count} students</span>
                 <span className="text-slate-700 font-medium">{b.teacher_name}</span>
               </div>
+              <button data-testid={`print-ids-${b.id}`} onClick={() => navigate(`/app/print-ids/${b.id}`)}
+                className="mt-3 w-full text-xs font-semibold text-blue-600 border border-blue-200 rounded-lg py-2 hover:bg-blue-50 flex items-center justify-center gap-1.5 transition-colors">
+                <Printer className="h-3.5 w-3.5" /> Print Batch ID Cards
+              </button>
             </Card>
           ))}
         </div>

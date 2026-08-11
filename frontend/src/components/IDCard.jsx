@@ -1,5 +1,4 @@
 import { QRCodeSVG } from "qrcode.react";
-import { GraduationCap } from "lucide-react";
 import { fileUrl } from "@/lib/api";
 
 const TEMPLATES = {
@@ -9,14 +8,18 @@ const TEMPLATES = {
 };
 
 export default function IDCard({ student, institute }) {
-  const t = TEMPLATES[student.template] || TEMPLATES.classic;
+  const t = TEMPLATES[student.template || institute?.id_template] || TEMPLATES.classic;
+  const instName = (typeof institute === "string" ? institute : institute?.name) || "EduSync";
+  const logo = institute?.logo_url ? fileUrl(institute.logo_url) : "/edusync-logo.png";
   return (
     <div id="id-card" data-testid="id-card" className="w-[340px] rounded-2xl overflow-hidden shadow-lg border border-slate-200 bg-white mx-auto">
-      <div className={`bg-gradient-to-r ${t.grad} p-4 text-white flex items-center gap-2`}>
-        <div className="h-8 w-8 rounded-lg bg-white/20 flex items-center justify-center"><GraduationCap className="h-5 w-5" /></div>
-        <div>
-          <p className="font-bold text-sm leading-none font-heading">{institute}</p>
-          <p className="text-[10px] text-white/80">STUDENT IDENTITY CARD</p>
+      <div className={`bg-gradient-to-r ${t.grad} p-4 text-white flex items-center gap-2.5`}>
+        <div className="h-10 w-10 rounded-lg bg-white p-0.5 flex items-center justify-center overflow-hidden shrink-0">
+          <img src={logo} alt="" className="h-full w-full object-contain" />
+        </div>
+        <div className="min-w-0">
+          <p className="font-bold text-sm leading-tight font-heading truncate">{instName}</p>
+          <p className="text-[10px] text-white/80 tracking-wide">STUDENT IDENTITY CARD</p>
         </div>
       </div>
       <div className="p-5 flex gap-4">
@@ -36,7 +39,8 @@ export default function IDCard({ student, institute }) {
         </div>
         <div className="text-right">
           <p className="text-[10px] text-slate-400">Scan for attendance</p>
-          <p className="text-[10px] text-slate-400 mt-1">Powered by EduSync</p>
+          {institute?.phone && <p className="text-[10px] text-slate-400 mt-0.5">{institute.phone}</p>}
+          <p className="text-[10px] text-slate-400 mt-0.5">Powered by EduSync</p>
         </div>
       </div>
       <div className={`h-2 bg-gradient-to-r ${t.grad}`} />

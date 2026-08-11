@@ -45,7 +45,7 @@ export default function Enquiries() {
     <div>
       <PageHeader title="Admission Lead Pipeline" subtitle={`${items.length} leads across the funnel`} actions={
         <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild><Button data-testid="add-enquiry-btn" className="bg-blue-600 hover:bg-blue-700"><Plus className="h-4 w-4 mr-2" />New Lead</Button></DialogTrigger>
+          <DialogTrigger asChild><Button data-testid="add-enquiry-btn" className="btn-gradient"><Plus className="h-4 w-4 mr-2" />New Lead</Button></DialogTrigger>
           <DialogContent>
             <DialogHeader><DialogTitle>New Admission Lead</DialogTitle></DialogHeader>
             <div className="space-y-3">
@@ -56,7 +56,7 @@ export default function Enquiries() {
               </div>
               <div><Label>Notes</Label><Textarea data-testid="enq-notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></div>
             </div>
-            <DialogFooter><Button data-testid="save-enquiry-btn" onClick={create} disabled={!form.name || !form.phone} className="bg-blue-600 hover:bg-blue-700">Add Lead</Button></DialogFooter>
+            <DialogFooter><Button data-testid="save-enquiry-btn" onClick={create} disabled={!form.name || !form.phone} className="btn-gradient">Add Lead</Button></DialogFooter>
           </DialogContent>
         </Dialog>
       } />

@@ -117,12 +117,12 @@ export default function Fees() {
                 <div className="flex gap-2 pt-2 border-t">
                   <Input data-testid="comp-name" placeholder="e.g. Transport Fee" value={newComp.name} onChange={(e) => setNewComp({ ...newComp, name: e.target.value })} />
                   <Input data-testid="comp-amount" type="number" placeholder="₹" className="w-28" value={newComp.amount} onChange={(e) => setNewComp({ ...newComp, amount: e.target.value })} />
-                  <Button data-testid="add-comp-btn" onClick={addComp} className="bg-blue-600 hover:bg-blue-700"><Plus className="h-4 w-4" /></Button>
+                  <Button data-testid="add-comp-btn" onClick={addComp} className="btn-gradient"><Plus className="h-4 w-4" /></Button>
                 </div>
               </DialogContent>
             </Dialog>
             <Dialog open={open} onOpenChange={setOpen}>
-              <DialogTrigger asChild><Button data-testid="add-fee-btn" className="bg-blue-600 hover:bg-blue-700"><Plus className="h-4 w-4 mr-2" />Add Fee</Button></DialogTrigger>
+              <DialogTrigger asChild><Button data-testid="add-fee-btn" className="btn-gradient"><Plus className="h-4 w-4 mr-2" />Add Fee</Button></DialogTrigger>
               <DialogContent className="max-h-[90vh] overflow-y-auto">
                 <DialogHeader><DialogTitle>Create Fee (itemized)</DialogTitle></DialogHeader>
                 <div className="space-y-3">
@@ -153,7 +153,7 @@ export default function Fees() {
                     <div><Label>Due Date</Label><Input data-testid="fee-due-date" type="date" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} /></div>
                   </div>
                 </div>
-                <DialogFooter><Button data-testid="save-fee-btn" onClick={createFee} disabled={!form.student_id} className="bg-blue-600 hover:bg-blue-700">Create</Button></DialogFooter>
+                <DialogFooter><Button data-testid="save-fee-btn" onClick={createFee} disabled={!form.student_id} className="btn-gradient">Create</Button></DialogFooter>
               </DialogContent>
             </Dialog>
           </div>
@@ -186,7 +186,7 @@ export default function Fees() {
                           <Button data-testid={`markpaid-${f.id}`} size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => markPaid(f.id)}><CheckCircle2 className="h-3.5 w-3.5" /></Button>
                         </>
                       ) : (
-                        <Button data-testid={`pay-${f.id}`} size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={() => payOnline(f)} disabled={paying === f.id}>
+                        <Button data-testid={`pay-${f.id}`} size="sm" className="btn-gradient" onClick={() => payOnline(f)} disabled={paying === f.id}>
                           {paying === f.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><CreditCard className="h-3.5 w-3.5 mr-1" />Pay {money(bal(f))}</>}
                         </Button>
                       ))}
@@ -205,7 +205,7 @@ export default function Fees() {
           <DialogHeader><DialogTitle>Record Partial Payment</DialogTitle></DialogHeader>
           <p className="text-sm text-slate-500">{partial?.student_name} · Balance {partial && money(bal(partial))}</p>
           <div><Label>Amount received (₹)</Label><Input data-testid="partial-amount" type="number" className="mt-1.5" value={partialAmt} onChange={(e) => setPartialAmt(e.target.value)} /></div>
-          <DialogFooter><Button data-testid="save-partial-btn" onClick={doPartial} disabled={!partialAmt} className="bg-blue-600 hover:bg-blue-700">Record Payment</Button></DialogFooter>
+          <DialogFooter><Button data-testid="save-partial-btn" onClick={doPartial} disabled={!partialAmt} className="btn-gradient">Record Payment</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

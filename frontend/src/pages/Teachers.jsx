@@ -31,7 +31,7 @@ export default function Teachers() {
     <div>
       <PageHeader title="Teachers & Staff" subtitle={`${teachers.length} teachers`} actions={
         <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild><Button data-testid="add-teacher-btn" className="bg-blue-600 hover:bg-blue-700"><UserPlus className="h-4 w-4 mr-2" />Add Teacher</Button></DialogTrigger>
+          <DialogTrigger asChild><Button data-testid="add-teacher-btn" className="btn-gradient"><UserPlus className="h-4 w-4 mr-2" />Add Teacher</Button></DialogTrigger>
           <DialogContent>
             <DialogHeader><DialogTitle>Add Teacher</DialogTitle></DialogHeader>
             <div className="space-y-3">
@@ -44,7 +44,7 @@ export default function Teachers() {
               </div>
               <div><Label>Subjects (comma separated)</Label><Input value={form.subjects} onChange={(e) => setForm({ ...form, subjects: e.target.value })} placeholder="Maths, Physics" /></div>
             </div>
-            <DialogFooter><Button data-testid="save-teacher-btn" onClick={save} disabled={!form.name || !form.email} className="bg-blue-600 hover:bg-blue-700">Add Teacher</Button></DialogFooter>
+            <DialogFooter><Button data-testid="save-teacher-btn" onClick={save} disabled={!form.name || !form.email} className="btn-gradient">Add Teacher</Button></DialogFooter>
           </DialogContent>
         </Dialog>
       } />

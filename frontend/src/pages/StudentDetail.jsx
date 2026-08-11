@@ -12,7 +12,7 @@ import { Upload, FileText, Printer, Trash2, Download, Sparkles, Loader2, File } 
 
 export default function StudentDetail() {
   const { id } = useParams();
-  const { user } = useAuth();
+  const { user, institute } = useAuth();
   const [s, setS] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [summary, setSummary] = useState("");
@@ -116,8 +116,8 @@ export default function StudentDetail() {
 
         <TabsContent value="idcard">
           <div className="flex flex-col items-center gap-6">
-            <IDCard student={s} institute={user.institute_name} />
-            <Button data-testid="print-idcard-btn" onClick={printCard} className="no-print bg-blue-600 hover:bg-blue-700"><Printer className="h-4 w-4 mr-2" />Print ID Card</Button>
+            <IDCard student={s} institute={institute} />
+            <Button data-testid="print-idcard-btn" onClick={printCard} className="no-print btn-gradient"><Printer className="h-4 w-4 mr-2" />Print ID Card</Button>
           </div>
         </TabsContent>
       </Tabs>

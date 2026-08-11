@@ -66,7 +66,7 @@ export default function Attendance() {
               {!scanning && <QrCode className="h-16 w-16 text-slate-600" />}
             </div>
             {!scanning ? (
-              <Button data-testid="start-scan-btn" onClick={startScan} className="w-full mt-4 bg-blue-600 hover:bg-blue-700"><Camera className="h-4 w-4 mr-2" />Start Camera Scan</Button>
+              <Button data-testid="start-scan-btn" onClick={startScan} className="w-full mt-4 btn-gradient"><Camera className="h-4 w-4 mr-2" />Start Camera Scan</Button>
             ) : (
               <Button data-testid="stop-scan-btn" onClick={stopScan} variant="outline" className="w-full mt-4">Stop Scanning</Button>
             )}

@@ -49,6 +49,15 @@ Multi-institute management SaaS with two connected portals sharing one database.
 - Twilio SMS live for overdue fee reminders (per-fee reminder, bulk "Remind Overdue", and daily cron .emergent/crons.yml at 09:30 IST → /api/cron/fee-reminders, Bearer-secured).
 - Data-integrity hardening: fee student existence check (404), salary uniqueness (409), leave idempotency (400), negative salary rejection (422), OTP no longer logged.
 
+## Implemented (2026-06) — Message-161 features + premium theme
+- Classes/Sections on batches (Nursery–12th, A/B/C) with UI selectors + card badges.
+- Complaints upgraded: routing direction (Principal/Class Teacher/Parent), PDF attachment upload+view, status tags (Open/In-Progress/Resolved).
+- Teacher dashboard shows Assigned Admission Leads.
+- Master ID Card template (institute.id_template) auto-applied to all student ID cards; picker in Branding.
+- Login redesign: deep-dark animated theme (floating particles, gradient orbs, frosted glass card w/ glow border), logo + tagline.
+- Premium tri-color theme (deep navy / emerald / purple) applied app-wide: sidebar, header, avatar, KPI cards, charts, all primary buttons (.btn-gradient), module accents. Login shows subtle EduSync logo watermark; demo credentials removed from login.
+- Fixed backend crash (corrupt stray lines in server.py from prior fork).
+
 ## Backlog / Remaining (P2)
 - Add DialogDescription/aria-describedby to dialogs (LOW — console accessibility warning only).
 - Add error/catch states to page load effects (avoid indefinite loaders on API failure).
