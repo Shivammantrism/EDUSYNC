@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { UserPlus, Users, Search, Upload, Loader2 } from "lucide-react";
+import { UserPlus, Users, Search, Upload, Loader2, KeyRound } from "lucide-react";
 import CredentialsDialog from "@/components/CredentialsDialog";
 
 export default function Students() {
@@ -58,7 +58,14 @@ export default function Students() {
     } catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
     finally { setSaving(false); }
   };
-  const openEdit = (s) => { setForm({ name: s.name || "", age: s.age || "", gender: s.gender || "Male", batch_id: s.batch_id || "", parent_name: s.parent_name || "", parent_phone: s.parent_phone || "", parent_email: s.parent_email || "", monthly_fee: s.monthly_fee || 0, photo_url: s.photo_url || "", template: s.template || "classic", password: "" }); setEditId(s.id); setOpen(true); };
+  const openEdit = (s) => { setForm({ name: s.name || "", age: s.age || "", gender: s.gender || "Male", batch_id: s.batch_id || "", email: s.email || "", parent_name: s.parent_name || "", parent_phone: s.parent_phone || "", parent_email: s.parent_email || "", monthly_fee: s.monthly_fee || 0, photo_url: s.photo_url || "", template: s.template || "classic", password: "" }); setEditId(s.id); setOpen(true); };
+  const resend = async (s) => {
+    try {
+      const { data } = await api.post(`/students/${s.id}/resend-credentials`);
+      toast.success(data.email_sent ? "New credentials emailed" : "New password set — share manually");
+      setCredResult({ ...data, roleLabel: "Student", loginIdLabel: "Student ID", loginId: data.student_id });
+    } catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
+  };
 
   if (!students) return <Loader />;
   const filtered = students.filter((s) => (s.name.toLowerCase().includes(q.toLowerCase()) || s.student_id.toLowerCase().includes(q.toLowerCase())) && (!clsParam || s.batch_id === clsParam));
@@ -147,7 +154,12 @@ export default function Students() {
                   <TableCell>{s.age}</TableCell>
                   <TableCell className="text-slate-500">{s.parent_phone}</TableCell>
                   <TableCell className="text-right">₹{s.monthly_fee}</TableCell>
-                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>{user.role === "principal" && <button data-testid={`edit-student-${s.id}`} onClick={() => openEdit(s)} className="text-xs font-semibold text-blue-600 hover:underline">Edit</button>}</TableCell>
+                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-end gap-2">
+                      <button data-testid={`resend-student-${s.id}`} onClick={() => resend(s)} className="text-slate-300 hover:text-emerald-600" title="Reset & email new password"><KeyRound className="h-4 w-4" /></button>
+                      {user.role === "principal" && <button data-testid={`edit-student-${s.id}`} onClick={() => openEdit(s)} className="text-xs font-semibold text-blue-600 hover:underline">Edit</button>}
+                    </div>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

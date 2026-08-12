@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { UserPlus, Users, Trash2, IdCard, Printer } from "lucide-react";
+import { UserPlus, Users, Trash2, IdCard, Printer, KeyRound } from "lucide-react";
 import IDCard from "@/components/IDCard";
 import CredentialsDialog from "@/components/CredentialsDialog";
 
@@ -41,6 +41,13 @@ export default function Teachers() {
   };
   const openEdit = (t) => { setForm({ name: t.name || "", email: t.email || "", password: "", phone: t.phone || "", subjects: (t.subjects || []).join(", "), monthly_salary: t.monthly_salary || 0, leave_balance: t.leave_balance ?? 12 }); setEditId(t.id); setOpen(true); };
   const del = async (id) => { await api.delete(`/teachers/${id}`); toast.success("Removed"); load(); };
+  const resend = async (t) => {
+    try {
+      const { data } = await api.post(`/teachers/${t.id}/resend-credentials`);
+      toast.success(data.email_sent ? "New credentials emailed" : "New password set — share manually");
+      setCredResult({ ...data, roleLabel: "Teacher", loginIdLabel: "Login Email", loginId: data.email });
+    } catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
+  };
 
   if (!teachers) return <Loader />;
   return (
@@ -85,6 +92,7 @@ export default function Teachers() {
                   <TableCell>
                     <div className="flex items-center justify-end gap-2">
                       <button data-testid={`edit-teacher-${t.id}`} onClick={() => openEdit(t)} className="text-xs font-semibold text-blue-600 hover:underline mr-1">Edit</button>
+                      <button data-testid={`resend-teacher-${t.id}`} onClick={() => resend(t)} className="text-slate-300 hover:text-emerald-600" title="Reset & email new password"><KeyRound className="h-4 w-4" /></button>
                       <button data-testid={`view-id-${t.id}`} onClick={() => setIdCardFor(t)} className="text-slate-300 hover:text-violet-600" title="View ID card"><IdCard className="h-4 w-4" /></button>
                       <button data-testid={`del-teacher-${t.id}`} onClick={() => del(t.id)} className="text-slate-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
                     </div>

@@ -736,6 +736,25 @@ async def create_student(body: StudentIn, user=Depends(require("principal", "tea
     return out
 
 
+@api.post("/students/{sid}/resend-credentials")
+async def resend_student_credentials(sid: str, user=Depends(require("principal", "teacher"))):
+    s = await db.students.find_one({"id": sid, "institute_id": user["institute_id"]})
+    if not s:
+        raise HTTPException(404, "Student not found")
+    if user["role"] == "teacher" and s.get("batch_id") not in await teacher_batches(user):
+        raise HTTPException(403, "Forbidden")
+    inst = await db.institutes.find_one({"id": user["institute_id"]})
+    temp_password = gen_temp_password()
+    await db.students.update_one({"id": sid}, {"$set": {"password_hash": hash_pw(temp_password)}})
+    recipients = list({r for r in [s.get("email"), s.get("parent_email")] if r})
+    email_sent = False
+    for r in recipients:
+        if await send_welcome_email(r, inst, s.get("name", "Student"), "Student", s.get("student_id"), temp_password, id_label="Student ID"):
+            email_sent = True
+    return {"student_id": s.get("student_id"), "name": s.get("name"),
+            "temp_password": temp_password, "email_sent": email_sent, "email_recipients": recipients}
+
+
 @api.put("/students/{sid}")
 async def update_student(sid: str, payload: dict, user=Depends(require("principal"))):
     allowed = {"name", "age", "gender", "batch_id", "parent_name", "parent_phone", "parent_email", "monthly_fee", "photo_url", "template"}
@@ -878,6 +897,20 @@ async def create_teacher(body: TeacherIn, user=Depends(require("principal"))):
     out["email_sent"] = email_sent
     out["email_recipients"] = [email]
     return out
+
+
+@api.post("/teachers/{tid}/resend-credentials")
+async def resend_teacher_credentials(tid: str, user=Depends(require("principal"))):
+    t = await db.users.find_one({"id": tid, "institute_id": user["institute_id"], "role": "teacher"})
+    if not t:
+        raise HTTPException(404, "Teacher not found")
+    inst = await db.institutes.find_one({"id": user["institute_id"]})
+    temp_password = gen_temp_password()
+    await db.users.update_one({"id": tid}, {"$set": {"password_hash": hash_pw(temp_password)}})
+    email = t.get("email")
+    email_sent = await send_welcome_email(email, inst, t.get("name", "Teacher"), "Teacher", email, temp_password, id_label="Login Email")
+    return {"faculty_id": t.get("faculty_id"), "email": email, "name": t.get("name"),
+            "temp_password": temp_password, "email_sent": email_sent, "email_recipients": [email] if email else []}
 
 
 @api.put("/teachers/{tid}")
