@@ -4,6 +4,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/context/AuthContext";
 import { MODULE_ACCENTS } from "@/lib/modules";
 import api from "@/lib/api";
+import InstallPrompt from "@/components/InstallPrompt";
+import { ensureNotificationPermission, showLocalNotification, notificationPermission } from "@/lib/pwa";
 import {
   LayoutDashboard, Users, GraduationCap, CalendarCheck, Wallet, FileText,
   BookOpen, Megaphone, MessageSquareWarning, UserPlus, CalendarDays, Banknote,
@@ -24,14 +26,33 @@ function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [data, setData] = useState({ count: 0, items: [] });
   const [error, setError] = useState(false);
+  const [perm, setPerm] = useState(() => notificationPermission());
   const ref = useRef(null);
+
+  const notifyNew = (items) => {
+    if (notificationPermission() !== "granted") return;
+    const key = "edusync_seen_alerts";
+    let prev;
+    try { prev = JSON.parse(localStorage.getItem(key) || "null"); } catch { prev = null; }
+    const titles = items.map((i) => i.title);
+    if (prev === null) { localStorage.setItem(key, JSON.stringify(titles)); return; }
+    const fresh = titles.filter((t) => !prev.includes(t));
+    fresh.slice(0, 3).forEach((t) => showLocalNotification("EduSync", t));
+    localStorage.setItem(key, JSON.stringify(titles));
+  };
 
   const load = async () => {
     try {
       const { data } = await api.get("/notifications");
       setData(data);
       setError(false);
+      notifyNew(data.items || []);
     } catch { setError(true); }
+  };
+
+  const enableAlerts = async () => {
+    const p = await ensureNotificationPermission();
+    setPerm(p);
   };
 
   useEffect(() => {
@@ -66,7 +87,11 @@ function NotificationBell() {
             className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/5 overflow-hidden z-50">
             <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
               <p className="font-heading font-bold text-slate-800 text-sm">Notifications</p>
-              <span className="text-xs text-slate-400">{data.count} new</span>
+              {perm === "granted"
+                ? <span className="text-xs text-slate-400">{data.count} new</span>
+                : perm !== "unsupported"
+                  ? <button data-testid="enable-alerts-btn" onClick={enableAlerts} className="text-[11px] font-semibold text-blue-600 hover:underline">Enable alerts</button>
+                  : <span className="text-xs text-slate-400">{data.count} new</span>}
             </div>
             <div className="max-h-80 overflow-y-auto">
               {data.items.length === 0 ? (
@@ -247,6 +272,7 @@ export default function Layout() {
           </motion.main>
         </AnimatePresence>
       </div>
+      <InstallPrompt />
     </div>
   );
 }

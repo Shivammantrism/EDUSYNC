@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "@/index.css";
 import App from "@/App";
+import { registerSW } from "@/lib/pwa";
 
 // Suppress benign ResizeObserver loop errors (triggered by Recharts) and the dev overlay they cause
 const roMsgs = ["ResizeObserver loop limit exceeded", "ResizeObserver loop completed with undelivered notifications."];
@@ -31,3 +32,5 @@ root.render(
     </QueryClientProvider>
   </React.StrictMode>,
 );
+
+registerSW();
