@@ -8,6 +8,7 @@ import {
 } from "recharts";
 import { Users, CalendarCheck, Wallet, UserCheck, MessageSquareWarning, BookOpen, Award, TrendingUp, Phone, GraduationCap, AlertTriangle, Clock, CalendarX, Sparkles } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { toast } from "sonner";
 
 function InsightsPanel() {
   const [ins, setIns] = useState(null);
@@ -62,6 +63,14 @@ function InsightsPanel() {
       <Dialog open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>
         <DialogContent data-testid="insight-detail-dialog">
           <DialogHeader><DialogTitle>{detail?.title}</DialogTitle></DialogHeader>
+          {detail?.title?.includes("Low Attendance") && (detail?.rows?.length || 0) > 0 && (
+            <button data-testid="notify-parents-btn" onClick={async () => {
+              try { const { data } = await api.post("/insights/notify-parents"); toast.success(`Messaged ${data.sent} parent(s) via SMS`); }
+              catch (e) { toast.error("Could not send messages"); }
+            }} className="w-full mb-3 text-sm font-semibold text-white rounded-lg py-2.5 btn-gradient">
+              Message all parents via SMS
+            </button>
+          )}
           {(detail?.rows?.length || 0) === 0 ? <p className="text-sm text-slate-400 py-2">Nothing to show — all clear.</p> : (
             <div className="space-y-1.5 max-h-[60vh] overflow-y-auto">
               {detail.rows.map((r, i) => <p key={i} data-testid={`insight-row-${i}`} className="text-sm text-slate-700 border-b border-slate-100 py-1.5">{r}</p>)}

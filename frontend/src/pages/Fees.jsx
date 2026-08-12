@@ -181,6 +181,25 @@ export default function Fees() {
               <p className="text-lg font-extrabold text-emerald-700">{money(stats.cash)} <span className="text-xs font-medium text-slate-400">{stats.cash_pct}%</span></p>
             </div>
           </div>
+          {stats.monthly && stats.monthly.length > 0 && (
+            <div className="mt-5 pt-4 border-t border-slate-100" data-testid="fee-monthly-trend">
+              <p className="text-xs font-semibold text-slate-500 mb-3">Monthly trend · UPI vs Cash</p>
+              <div className="flex items-end gap-3 h-24">
+                {stats.monthly.map((m) => {
+                  const tot = m.online + m.cash || 1;
+                  return (
+                    <div key={m.month} className="flex-1 flex flex-col items-center gap-1">
+                      <div className="w-full flex flex-col justify-end h-16 rounded-md overflow-hidden bg-slate-100">
+                        <div className="bg-violet-500" style={{ height: `${(m.online / tot) * 100}%` }} title={`UPI ${money(m.online)}`} />
+                        <div className="bg-emerald-500" style={{ height: `${(m.cash / tot) * 100}%` }} title={`Cash ${money(m.cash)}`} />
+                      </div>
+                      <span className="text-[10px] text-slate-400">{m.month.slice(2)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

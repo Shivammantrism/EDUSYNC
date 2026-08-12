@@ -871,19 +871,27 @@ async def mark_fee_paid(fee_id: str, user=Depends(require("principal"))):
 async def fee_stats(user=Depends(require("principal"))):
     online = cash = 0.0
     oc = cc = 0
-    for f in await db.fees.find(scope(user), {"_id": 0, "paid_amount": 1, "payment_id": 1}).to_list(10000):
+    monthly = {}
+    for f in await db.fees.find(scope(user), {"_id": 0, "paid_amount": 1, "payment_id": 1, "month": 1}).to_list(10000):
         amt = float(f.get("paid_amount", 0) or 0)
         if amt <= 0:
             continue
-        if f.get("payment_id") and f.get("payment_id") != "CASH":
-            online += amt; oc += 1
+        is_online = bool(f.get("payment_id") and f.get("payment_id") != "CASH")
+        mo = f.get("month") or "?"
+        m = monthly.setdefault(mo, {"month": mo, "online": 0.0, "cash": 0.0})
+        if is_online:
+            online += amt; oc += 1; m["online"] += amt
         else:
-            cash += amt; cc += 1
+            cash += amt; cc += 1; m["cash"] += amt
     total = round(online + cash, 2)
+    months = sorted(monthly.values(), key=lambda x: x["month"])[-6:]
+    for m in months:
+        m["online"] = round(m["online"], 2); m["cash"] = round(m["cash"], 2)
     return {"online": round(online, 2), "cash": round(cash, 2), "total": total,
             "online_count": oc, "cash_count": cc,
             "online_pct": round(online / total * 100, 1) if total else 0,
-            "cash_pct": round(cash / total * 100, 1) if total else 0}
+            "cash_pct": round(cash / total * 100, 1) if total else 0,
+            "monthly": months}
 
 
 @api.post("/fees/{fee_id}/reminder")
@@ -1358,6 +1366,52 @@ async def timetable_pdf(user=Depends(get_current_user), batch_id: Optional[str] 
         render(bid, bname)
     c.showPage(); c.save(); buf.seek(0)
     return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": "inline; filename=timetable.pdf"})
+
+
+@api.post("/timetable/{batch_id}/email")
+async def email_timetable(batch_id: str, user=Depends(require("principal"))):
+    b = await db.batches.find_one({"id": batch_id, "institute_id": user["institute_id"]}, {"_id": 0})
+    if not b:
+        raise HTTPException(404, "Batch not found")
+    teacher = await db.users.find_one({"id": b.get("teacher_id"), "institute_id": user["institute_id"]}, {"_id": 0}) if b.get("teacher_id") else None
+    if not teacher or not teacher.get("email"):
+        raise HTTPException(400, "This batch has no class teacher with an email address")
+    rows = await db.timetable.find({"institute_id": user["institute_id"], "batch_id": batch_id}, {"_id": 0}).to_list(2000)
+    if not rows:
+        raise HTTPException(400, "No timetable to send. Generate the timetable first.")
+    days = [d for d in DAYS if any(r["day"] == d for r in rows)] or DAYS[:5]
+    slots = sorted({r["slot"] for r in rows}) or SLOTS
+
+    def cell(d, s):
+        e = next((r for r in rows if r["day"] == d and r["slot"] == s), None)
+        return f"{e.get('subject') or e.get('batch_name')}<br><small style='color:#64748b'>{e.get('teacher_name', '')}</small>" if e else "-"
+    th = "".join(f"<th style='padding:8px;border:1px solid #e2e8f0;background:#1e3a8a;color:#fff'>{d}</th>" for d in days)
+    tb = "".join("<tr><td style='padding:8px;border:1px solid #e2e8f0;font-weight:600'>" + s + "</td>" + "".join(f"<td style='padding:8px;border:1px solid #e2e8f0'>{cell(d, s)}</td>" for d in days) + "</tr>" for s in slots)
+    html = f"<h2 style='font-family:sans-serif'>Weekly Timetable — {b['name']}</h2><table style='border-collapse:collapse;font-family:sans-serif;font-size:13px'><tr><th style='padding:8px;border:1px solid #e2e8f0;background:#7c3aed;color:#fff'>Time</th>{th}</tr>{tb}</table><p style='font-family:sans-serif;color:#64748b'>Sent via EduSync — Privam Solutions.</p>"
+    ok = await send_email(teacher["email"], f"Weekly Timetable — {b['name']}", html)
+    return {"ok": ok, "emailed_to": teacher["email"]}
+
+
+@api.post("/insights/notify-parents")
+async def notify_low_attendance_parents(user=Depends(require("principal"))):
+    iid = user["institute_id"]
+    inst = await db.institutes.find_one({"id": iid}) or {}
+    students = await db.students.find({"institute_id": iid}, {"_id": 0}).to_list(5000)
+    sent = skipped = 0
+    for s in students:
+        total = await db.attendance.count_documents({"student_id": s["id"]})
+        if total == 0:
+            continue
+        present = await db.attendance.count_documents({"student_id": s["id"], "status": "present"})
+        pct = present / total * 100
+        if pct < 75:
+            phone = s.get("parent_phone") or s.get("phone")
+            msg = f"Dear Parent, {s['name']}'s attendance is {round(pct, 1)}% (below 75%) at {inst.get('name', 'our school')}. Kindly ensure regular attendance. - EduSync"
+            if phone and send_sms(phone, msg):
+                sent += 1
+            else:
+                skipped += 1
+    return {"ok": True, "sent": sent, "skipped": skipped}
 
 
 # ---------------------------------------------------------------- report card PDF
