@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.047" timestamp="2026-08-12T12:33:17.706944+00:00" hostname="agent-env-0571847a-299d-46cc-b578-8f74160cbe78"><testcase classname="tests.test_iteration9_requested" name="test_cors_allows_credentials_with_explicit_origin" time="0.072"><failure message="AssertionError: assert '' == 'true'&#10;  &#10;  - true">backend/tests/test_iteration9_requested.py:311: in test_cors_allows_credentials_with_explicit_origin
+    assert response.headers.get("access-control-allow-credentials", "").lower() == "true"
+E   AssertionError: assert '' == 'true'
+E     
+E     - true</failure></testcase></testsuite></testsuites>

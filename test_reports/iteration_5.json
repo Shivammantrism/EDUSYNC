@@ -1,0 +1,111 @@
+{
+  "summary": "Tested notification payloads for principal/teacher/student, principal teacher/student credential generation, teacher student admission, delivered and rejected email paths, generated logins, UI notification dropdowns, both credential dialogs, teacher Register Student access, auth playbook controls, cleanup, and a production frontend build. Core IDs, passwords, role permissions, dialogs, and notifications work. Email status/delivery behavior is unreliable, student email is not modeled, and cookie/CORS controls still fail.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "/api/students",
+        "issue": "A distinct student email is silently discarded because StudentIn has no email field. Creating with both email and parent_email returned only the parent in email_recipients, so credentials cannot be sent to both student and parent as required.",
+        "priority": "HIGH"
+      },
+      {
+        "endpoint": "/api/teachers and /api/students",
+        "issue": "email_sent is not a reliable deliverability signal. Nonexistent @example.com recipients were reported true in 2/3 runs, while delivered@resend.dev later returned false when the proxy rate-limited requests (HTTP 429). The backend equates any proxy 2xx acceptance with delivery and has no retry/backoff for 429.",
+        "priority": "HIGH"
+      },
+      {
+        "endpoint": "/api/auth/login",
+        "issue": "Successful login does not set an application access_token HttpOnly cookie; only the edge-provider __cf_bm cookie is present.",
+        "priority": "HIGH"
+      },
+      {
+        "endpoint": "CORS middleware",
+        "issue": "Credentialed CORS playbook check fails: allow_credentials is false and wildcard origins are configured.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "/api/notifications",
+        "issue": "count is a live count of computed alert categories, not an unread count. There is no notification ID, read state, or mark-read operation, so opening the dropdown never clears the badge."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "CredentialsDialog",
+        "issue": "A long recipient email makes the green email-status banner overflow horizontally outside the dialog instead of wrapping within it.",
+        "selector": "[data-testid='cred-email-status']",
+        "priority": "MEDIUM"
+      },
+      {
+        "component": "Teacher/Student create and credentials dialogs",
+        "issue": "Opening the dialogs repeatedly logs Radix warnings for missing DialogDescription/aria-describedby, reducing screen-reader context.",
+        "selector": "[role='dialog']",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Credential delivery status",
+        "issue": "Teachers.jsx and Students.jsx always toast 'credentials emailed' immediately after creation, even when the API returns email_sent=false; this contradicts the result dialog's manual-sharing state.",
+        "affected_selectors": ["[data-testid='save-teacher-btn']", "[data-testid='save-student-btn']", "[data-testid='cred-email-status']"]
+      },
+      {
+        "flow": "Notification loading",
+        "issue": "NotificationBell silently swallows GET /notifications failures and retains the empty-state data, so an outage is indistinguishable from 'all caught up'.",
+        "affected_selectors": ["[data-testid='notification-bell-btn']", "[data-testid='notification-empty']"]
+      }
+    ],
+    "design_issues": [
+      {
+        "screen": "Teacher credentials result",
+        "issues": ["Long email addresses are not constrained or word-broken inside the status banner."]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration11_notifications_credentials.py",
+    "/app/test_reports/pytest/pytest_iteration11_notifications_credentials.xml",
+    "/app/test_reports/pytest/pytest_iteration11_auth.xml",
+    "/app/test_reports/pytest/pytest_iteration11_cors.xml"
+  ],
+  "action_items": [
+    "Add a validated student email field to StudentIn and the admission UI, persist it, and send/return both student and parent recipients.",
+    "Define email_sent semantics and make delivery robust: distinguish accepted from delivered, handle proxy 429 with bounded retry/backoff, and expose a useful delivery failure reason.",
+    "Only show the 'credentials emailed' toast when email_sent is true; otherwise state that the account was created and credentials must be shared manually.",
+    "Add break-all/min-w-0 styling to the credential email-status content and DialogDescription to the dialogs.",
+    "Implement persisted read/unread notification state if the badge is intended to be an unread count, and show a notification-load error instead of silently showing empty.",
+    "Implement the required HttpOnly auth cookie and explicit credentialed CORS origins, or formally revise the auth playbook if Bearer/localStorage-only auth is intentional."
+  ],
+  "critical_code_review_comments": [
+    "StudentIn declares parent_email but no email; Pydantic drops the submitted student email before create_student evaluates doc.get('email').",
+    "send_email returns status_code < 300 as email_sent, which measures proxy acceptance rather than deliverability and immediately returns false on 429 without retry.",
+    "Both PUT /students/{sid} and PUT /teachers/{tid} are declared twice; later handlers are dead/ambiguous and should be consolidated.",
+    "Teacher admission accepts an arbitrary batch_id without validating that the batch belongs to the teacher's assigned batches.",
+    "server.py is 2802 lines and should be split into focused auth, academic, notification, credential-delivery, finance, and integration modules."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration11_notifications_credentials.py",
+    "/app/frontend/src/pages/Teachers.jsx",
+    "/app/frontend/src/pages/Students.jsx",
+    "/app/test_reports/pytest/pytest_iteration11_notifications_credentials.xml",
+    "/app/test_reports/pytest/pytest_iteration11_auth.xml",
+    "/app/test_reports/pytest/pytest_iteration11_cors.xml",
+    "/app/test_reports/iteration_5.json"
+  ],
+  "success_rate": {
+    "backend": "38% by final targeted pytest files (3/8 tests); core credential/RBAC/notification behavior passed, while email and auth-control assertions failed",
+    "frontend": "90% of requested flows passed; all requested interactions worked with one overflow defect and recurring accessibility warnings"
+  },
+  "flaky_tests": [
+    "Undeliverable-address expectation passed 1/3 runs for both teacher and teacher-admitted student; earlier runs incorrectly returned email_sent=true.",
+    "delivered@resend.dev API expectation passed 1/2 runs for teacher and 1/2 for student; subsequent runs hit proxy HTTP 429. The UI delivered-address run passed."
+  ],
+  "seed_data_creation": "Created temporary API teachers/students and one UI teacher/student; all were deleted. Removed seven disposable TEST_lockout login-attempt records. The pre-existing TEST_UI Retest Student was not modified.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "Used principal and teacher credentials from /app/memory/test_credentials.md; student role was verified with a generated Student ID and temporary password. /app/auth_testing.md is absent.",
+  "context_for_next_testing_agent": "Notifications returned valid role-scoped {count, items} for all three roles. Generated Faculty/Student IDs matched DP2026TNNN and DP2026NNNN; 8-character temporary passwords authenticated successfully. Teacher POST /students returned 200 and persisted in the assigned batch. Principal and teacher UI flows passed, including bell/dropdown, create notes, dialogs, and teacher Register Student visibility. Added missing testids teacher-phone, teacher-monthly-salary, teacher-subjects, student-parent-name, and student-monthly-fee and browser-verified them. yarn build passed with existing source-map and hook warnings.",
+  "rca_of_the_issue": "Student dual-recipient delivery fails because the request model omits email, so Pydantic removes it and create_student only sees parent_email. Email status instability comes from send_email mapping a proxy HTTP response directly to a boolean: accepted fake recipients become true, while transient 429 rate limits make the known delivered test address false. The frontend then compounds this by using an unconditional success toast. Auth failures are explicit implementation choices: login returns JWT JSON without set_cookie and CORSMiddleware uses allow_credentials=False with wildcard origins."
+}

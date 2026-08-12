@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.444" timestamp="2026-08-12T12:35:40.185764+00:00" hostname="agent-env-0571847a-299d-46cc-b578-8f74160cbe78"><testcase classname="tests.test_iteration11_notifications_credentials" name="test_student_and_parent_email_are_both_returned_as_recipients" time="1.122"><failure message="AssertionError: assert {'delivered@resend.dev'} == {'delivered@r...@example.com'}&#10;  &#10;  Extra items in the right set:&#10;  'test_student_login_e4b36e5e@example.com'&#10;  &#10;  Full diff:&#10;    {&#10;        'delivered@resend.dev',&#10;  -     'test_student_login_e4b36e5e@example.com',&#10;    }">backend/tests/test_iteration11_notifications_credentials.py:171: in test_student_and_parent_email_are_both_returned_as_recipients
+    assert set(data["email_recipients"]) == {student_email, parent_email}
+E   AssertionError: assert {'delivered@resend.dev'} == {'delivered@r...@example.com'}
+E     
+E     Extra items in the right set:
+E     'test_student_login_e4b36e5e@example.com'
+E     
+E     Full diff:
+E       {
+E           'delivered@resend.dev',
+E     -     'test_student_login_e4b36e5e@example.com',
+E       }</failure></testcase></testsuite></testsuites>

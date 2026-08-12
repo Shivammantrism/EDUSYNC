@@ -150,3 +150,15 @@ All use `notify_parent_async` (WhatsApp-first via TWILIO_WHATSAPP_FROM → SMS f
 - Backend curl-verified: ID migration/continuation, quiz create/attempt scoring w/ negative marking, batch-auth 403, insights buckets (red=3/orange=15), auto-absent dedup flag, student AI summary, student report PDF, homework/exam notify hooks present.
 - Frontend compiles clean (only pre-existing html5-qrcode source-map + react-hooks/exhaustive-deps warnings).
 - NOTE: Live UI screenshots blocked by the platform preview idle-gate ("Wake up servers"); the frontend is running (compiles clean, /api reachable on same domain).
+
+## Implemented (2026-06, forked session, part 9) — Notification Center + Automated Credential Delivery
+- **In-App Notification Center (🔔 bell)**: bell in topbar (Layout.jsx `NotificationBell`) with unread-count badge + dropdown of role-scoped alerts (fees/absent/notices for students; leads/notices for teachers; fees/complaints/leaves for principal). Backed by GET /api/notifications. Shows empty state or a load-error state. Testing-agent verified.
+- **Automated Credential Delivery**: POST /api/teachers & POST /api/students now auto-generate an 8-char temp password (`gen_temp_password`), hash+store it, and email branded EduSync welcome credentials (logo + institute name + login link) via the Resend proxy (`send_welcome_email`/`_welcome_email_html`). Endpoints return `temp_password`, `email_sent`, `email_recipients`.
+  - Teacher: auto Faculty ID (e.g. DP2026T00X) + emailed login. Password field removed from create form (auto-generated); shown only on edit.
+  - Student: auto Student ID (DP2026XXXX) + emailed login to BOTH `email` (new field on StudentIn) and `parent_email`.
+  - Teachers can now admit students (POST /api/students allows principal + teacher).
+  - Frontend shows a `CredentialsDialog` after create (ID + temp password + email status, copy button). Toast reflects real `email_sent`.
+  - Robustness: `send_email` retries on HTTP 429 with backoff; logs failure body. NOTE: the Resend proxy blocks undeliverable/fake recipients (422) → `email_sent=false` gracefully; real inboxes + delivered@resend.dev return true.
+- Config: added `APP_BASE_URL` to backend/.env (frontend base for email login link + logo).
+- Known/out-of-scope from test report: notification badge is a live category count (no persisted read-state); auth is Bearer/localStorage by design (no HttpOnly cookie/credentialed CORS); server.py >2800 lines (refactor pending); duplicate PUT /students & /teachers handlers should be consolidated.
+

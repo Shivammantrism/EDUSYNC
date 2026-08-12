@@ -1,13 +1,109 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { NavLink, useNavigate, useLocation, Outlet } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/context/AuthContext";
 import { MODULE_ACCENTS } from "@/lib/modules";
+import api from "@/lib/api";
 import {
   LayoutDashboard, Users, GraduationCap, CalendarCheck, Wallet, FileText,
   BookOpen, Megaphone, MessageSquareWarning, UserPlus, CalendarDays, Banknote,
   LogOut, Menu, X, PlaneTakeoff, IdCard, Settings, ListChecks, Images,
+  Bell, Wallet as WalletIcon, UserX, Megaphone as MegaphoneIcon, UserPlus as UserPlusIcon, PlaneTakeoff as PlaneIcon,
 } from "lucide-react";
+
+const NOTIF_META = {
+  fee: { Icon: WalletIcon, color: "#f59e0b" },
+  absent: { Icon: UserX, color: "#ef4444" },
+  notice: { Icon: MegaphoneIcon, color: "#3b82f6" },
+  complaint: { Icon: MessageSquareWarning, color: "#ef4444" },
+  lead: { Icon: UserPlusIcon, color: "#10b981" },
+  leave: { Icon: PlaneIcon, color: "#8b5cf6" },
+};
+
+function NotificationBell() {
+  const [open, setOpen] = useState(false);
+  const [data, setData] = useState({ count: 0, items: [] });
+  const [error, setError] = useState(false);
+  const ref = useRef(null);
+
+  const load = async () => {
+    try {
+      const { data } = await api.get("/notifications");
+      setData(data);
+      setError(false);
+    } catch { setError(true); }
+  };
+
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 60000);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    const onClick = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, []);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button data-testid="notification-bell-btn" onClick={() => setOpen((o) => !o)}
+        className="relative h-10 w-10 rounded-full flex items-center justify-center text-white/90 hover:bg-white/10 transition-colors">
+        <Bell className="h-[19px] w-[19px]" />
+        {data.count > 0 && (
+          <span data-testid="notification-badge"
+            className="absolute top-1 right-1 min-w-[17px] h-[17px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-[#141d47]">
+            {data.count > 9 ? "9+" : data.count}
+          </span>
+        )}
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div data-testid="notification-dropdown"
+            initial={{ opacity: 0, y: -8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -8, scale: 0.98 }}
+            transition={{ duration: 0.18 }}
+            className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/5 overflow-hidden z-50">
+            <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+              <p className="font-heading font-bold text-slate-800 text-sm">Notifications</p>
+              <span className="text-xs text-slate-400">{data.count} new</span>
+            </div>
+            <div className="max-h-80 overflow-y-auto">
+              {data.items.length === 0 ? (
+                error ? (
+                  <div className="px-4 py-10 text-center text-sm text-amber-600" data-testid="notification-error">
+                    <Bell className="h-8 w-8 mx-auto mb-2 text-amber-200" />
+                    Couldn't load notifications. Try again shortly.
+                  </div>
+                ) : (
+                  <div className="px-4 py-10 text-center text-sm text-slate-400" data-testid="notification-empty">
+                    <Bell className="h-8 w-8 mx-auto mb-2 text-slate-200" />
+                    You're all caught up!
+                  </div>
+                )
+              ) : (
+                data.items.map((it, i) => {
+                  const meta = NOTIF_META[it.type] || NOTIF_META.notice;
+                  const Icon = meta.Icon;
+                  return (
+                    <div key={i} data-testid={`notification-item-${i}`}
+                      className="px-4 py-3 flex items-start gap-3 hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0">
+                      <span className="h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                        style={{ background: meta.color + "1a", color: meta.color }}>
+                        <Icon className="h-4 w-4" />
+                      </span>
+                      <p className="text-sm text-slate-700 leading-snug">{it.title}</p>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
 
 const NAV = {
   principal: [
@@ -132,6 +228,7 @@ export default function Layout() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <NotificationBell />
             <div className="text-right hidden sm:block">
               <p className="text-sm font-semibold text-white leading-none">{user?.name}</p>
               <p className="text-xs text-blue-300/70 mt-0.5">{user?.student_id || user?.email}</p>

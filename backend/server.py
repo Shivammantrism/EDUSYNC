@@ -8,6 +8,8 @@ import os
 import base64
 import csv
 import io
+import secrets
+import string
 import uuid
 import logging
 import hmac
@@ -111,17 +113,27 @@ async def send_email(to, subject, html, attachments=None):
     if not EMAIL_KEY or not to:
         logger.warning("Email skipped (no key/recipient)")
         return False
-    try:
-        payload = {"to": [to], "subject": subject, "html": html, "from_name": EMAIL_FROM_NAME}
-        if attachments:
-            payload["attachments"] = attachments
-        async with httpx.AsyncClient(timeout=45) as c:
-            r = await c.post(f"{EMAIL_BASE_URL}/api/v1/email/send",
-                             headers={"X-Email-Key": EMAIL_KEY}, json=payload)
-        return r.status_code < 300
-    except Exception as e:
-        logger.warning(f"Email failed: {e}")
-        return False
+    payload = {"to": [to], "subject": subject, "html": html, "from_name": EMAIL_FROM_NAME}
+    if attachments:
+        payload["attachments"] = attachments
+    for attempt in range(3):
+        try:
+            async with httpx.AsyncClient(timeout=45) as c:
+                r = await c.post(f"{EMAIL_BASE_URL}/api/v1/email/send",
+                                 headers={"X-Email-Key": EMAIL_KEY}, json=payload)
+            if r.status_code == 429 and attempt < 2:
+                await asyncio.sleep(1.5 * (attempt + 1))
+                continue
+            if r.status_code >= 300:
+                logger.warning(f"Email failed {r.status_code}: {r.text[:300]}")
+            return r.status_code < 300
+        except Exception as e:
+            logger.warning(f"Email failed: {e}")
+            if attempt < 2:
+                await asyncio.sleep(1.0)
+                continue
+            return False
+    return False
 
 
 def fmt_date(s):
@@ -330,7 +342,7 @@ class LoginReq(BaseModel):
 class TeacherIn(BaseModel):
     name: str
     email: EmailStr
-    password: str
+    password: Optional[str] = ""
     phone: Optional[str] = ""
     subjects: List[str] = []
     available_days: List[str] = []
@@ -344,6 +356,7 @@ class StudentIn(BaseModel):
     age: Optional[int] = Field(default=None, ge=1, le=120)
     gender: Optional[str] = ""
     photo_url: Optional[str] = ""
+    email: Optional[str] = ""
     parent_name: Optional[str] = ""
     parent_phone: Optional[str] = ""
     parent_email: Optional[str] = ""
@@ -617,6 +630,73 @@ async def next_seq(institute_id, field):
     return ((res or {}).get(field, 0) or 0) + 1
 
 
+APP_BASE_URL = os.environ.get("APP_BASE_URL", "")
+
+
+def gen_temp_password(n=8):
+    alphabet = string.ascii_letters + string.digits
+    return "".join(secrets.choice(alphabet) for _ in range(n))
+
+
+def _welcome_email_html(inst, name, role_label, login_id, password, id_label="Login ID"):
+    inst_name = (inst.get("name") if inst else None) or "EduSync"
+    login_url = APP_BASE_URL or ""
+    logo = f"{APP_BASE_URL}/edusync-logo.png" if APP_BASE_URL else ""
+    logo_html = (f"<img src='{logo}' alt='EduSync' width='46' height='46' "
+                 f"style='display:block;border-radius:10px;background:#ffffff;padding:4px' />") if logo else ""
+    btn = (f"<a href='{login_url}' style='display:inline-block;background:#1E3A8A;color:#ffffff;"
+           f"text-decoration:none;padding:13px 30px;border-radius:10px;font-weight:bold;font-size:14px'>"
+           f"Log in to EduSync</a>") if login_url else ""
+    return f"""
+<div style="background:#f1f5f9;padding:28px 0;font-family:Arial,Helvetica,sans-serif">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
+  <table role="presentation" width="560" cellpadding="0" cellspacing="0"
+    style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 30px rgba(15,23,42,0.08)">
+    <tr><td style="background:linear-gradient(90deg,#0b1e3b,#1a1240);padding:22px 28px">
+      <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+        <td>{logo_html}</td>
+        <td style="padding-left:12px">
+          <div style="color:#ffffff;font-size:20px;font-weight:800;letter-spacing:-0.3px">EduSync</div>
+          <div style="color:#93c5fd;font-size:11px">Smarter Institutes. Brighter Futures.</div>
+        </td>
+      </tr></table>
+    </td></tr>
+    <tr><td style="padding:32px 30px">
+      <p style="color:#0f172a;font-size:16px;margin:0 0 6px">Welcome to <b>{inst_name}</b>, {name}!</p>
+      <p style="color:#475569;font-size:14px;line-height:1.6;margin:0 0 20px">
+        Your {role_label} account on EduSync has been created. Use the credentials below to sign in.
+        Please change your password after your first login.
+      </p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+        style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px">
+        <tr><td style="padding:18px 22px">
+          <div style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.5px">{id_label}</div>
+          <div style="color:#0f172a;font-size:18px;font-weight:800;font-family:monospace;margin:2px 0 14px">{login_id}</div>
+          <div style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.5px">Temporary Password</div>
+          <div style="color:#1E3A8A;font-size:18px;font-weight:800;font-family:monospace;margin:2px 0 0">{password}</div>
+        </td></tr>
+      </table>
+      <div style="text-align:center;margin:26px 0 6px">{btn}</div>
+      <p style="color:#94a3b8;font-size:12px;line-height:1.6;margin:20px 0 0">
+        If the button doesn't work, open <span style="color:#1E3A8A">{login_url}</span> in your browser.
+      </p>
+    </td></tr>
+    <tr><td style="background:#0b1e3b;padding:16px 28px;text-align:center">
+      <span style="color:#93c5fd;font-size:11px">{inst_name} · Powered by EduSync — Privam Solutions</span>
+    </td></tr>
+  </table>
+  </td></tr></table>
+</div>"""
+
+
+async def send_welcome_email(to, inst, name, role_label, login_id, password, id_label="Login ID"):
+    if not to:
+        return False
+    inst_name = (inst.get("name") if inst else None) or "EduSync"
+    html = _welcome_email_html(inst, name, role_label, login_id, password, id_label)
+    return await send_email(to, f"Your {role_label} login for {inst_name} — EduSync", html)
+
+
 @api.get("/students")
 async def list_students(user=Depends(require("principal", "teacher")), batch_id: Optional[str] = None):
     q = scope(user)
@@ -629,7 +709,7 @@ async def list_students(user=Depends(require("principal", "teacher")), batch_id:
 
 
 @api.post("/students")
-async def create_student(body: StudentIn, user=Depends(require("principal"))):
+async def create_student(body: StudentIn, user=Depends(require("principal", "teacher"))):
     inst = await db.institutes.find_one({"id": user["institute_id"]})
     prefix = inst_prefix(inst)
     if not inst.get("code"):
@@ -637,13 +717,22 @@ async def create_student(body: StudentIn, user=Depends(require("principal"))):
     sid = str(uuid.uuid4())
     seq = await next_seq(user["institute_id"], "student_seq")
     student_id = f"{prefix}{datetime.now().strftime('%Y')}{seq:04d}"
+    temp_password = gen_temp_password()
     doc = body.model_dump()
     doc.update({"id": sid, "student_id": student_id, "institute_id": user["institute_id"],
-                "password_hash": hash_pw(body.password or "student123"), "documents": [],
+                "password_hash": hash_pw(temp_password), "documents": [],
                 "created_at": now_iso(), "join_month": datetime.now().strftime("%Y-%m")})
     doc.pop("password", None)
     await db.students.insert_one(doc)
+    recipients = list({r for r in [doc.get("email"), doc.get("parent_email")] if r})
+    email_sent = False
+    for r in recipients:
+        if await send_welcome_email(r, inst, doc.get("name", "Student"), "Student", student_id, temp_password, id_label="Student ID"):
+            email_sent = True
     out = await db.students.find_one({"id": sid}, {"_id": 0, "password_hash": 0})
+    out["temp_password"] = temp_password
+    out["email_sent"] = email_sent
+    out["email_recipients"] = recipients
     return out
 
 
@@ -683,6 +772,36 @@ async def export_teachers_csv(user=Depends(require("principal"))):
     for t in rows:
         w.writerow([t.get("faculty_id", ""), t.get("name", ""), t.get("email", ""), t.get("phone", ""), ", ".join(t.get("subjects", []) or []), t.get("monthly_salary", ""), t.get("leave_balance", 12)])
     return Response(content=buf.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=teachers.csv"})
+
+
+@api.get("/notifications")
+async def my_notifications(user=Depends(get_current_user)):
+    iid = user["institute_id"]; role = user["role"]; items = []
+    if role == "student":
+        n = await db.fees.count_documents({"student_id": user["id"], "status": {"$ne": "paid"}})
+        if n:
+            items.append({"type": "fee", "title": f"You have {n} pending fee payment(s)"})
+        if await db.attendance.find_one({"student_id": user["id"], "date": today_str(), "status": "absent"}):
+            items.append({"type": "absent", "title": "You were marked absent today"})
+        for an in await db.announcements.find({"institute_id": iid, "audience": {"$in": ["all", "students"]}}).sort("created_at", -1).to_list(3):
+            items.append({"type": "notice", "title": an.get("title", "")})
+    elif role == "teacher":
+        leads = await db.enquiries.count_documents({"institute_id": iid, "assigned_to": user["id"], "status": {"$ne": "closed"}})
+        if leads:
+            items.append({"type": "lead", "title": f"{leads} admission lead(s) assigned to you"})
+        for an in await db.announcements.find({"institute_id": iid, "audience": {"$in": ["all", "teachers"]}}).sort("created_at", -1).to_list(3):
+            items.append({"type": "notice", "title": an.get("title", "")})
+    else:
+        fees = await db.fees.count_documents({"institute_id": iid, "status": {"$ne": "paid"}})
+        if fees:
+            items.append({"type": "fee", "title": f"{fees} pending fee record(s)"})
+        comp = await db.complaints.count_documents({"institute_id": iid, "status": {"$ne": "resolved"}})
+        if comp:
+            items.append({"type": "complaint", "title": f"{comp} open complaint(s)"})
+        pend = await db.leaves.count_documents({"institute_id": iid, "status": "pending"})
+        if pend:
+            items.append({"type": "leave", "title": f"{pend} leave request(s) pending"})
+    return {"count": len(items), "items": items}
 
 
 @api.get("/students/{sid}")
@@ -747,12 +866,18 @@ async def create_teacher(body: TeacherIn, user=Depends(require("principal"))):
         await db.institutes.update_one({"id": user["institute_id"]}, {"$set": {"code": prefix}})
     seq = await next_seq(user["institute_id"], "faculty_seq")
     faculty_id = f"{prefix}{datetime.now().strftime('%Y')}T{seq:03d}"
+    temp_password = gen_temp_password()
     doc = body.model_dump()
-    doc.update({"id": uid, "email": email, "password_hash": hash_pw(body.password), "role": "teacher",
+    doc.update({"id": uid, "email": email, "password_hash": hash_pw(temp_password), "role": "teacher",
                 "faculty_id": faculty_id, "institute_id": user["institute_id"], "created_at": now_iso()})
     doc.pop("password", None)
     await db.users.insert_one(doc)
-    return await db.users.find_one({"id": uid}, {"_id": 0, "password_hash": 0})
+    email_sent = await send_welcome_email(email, inst, doc.get("name", "Teacher"), "Teacher", email, temp_password, id_label="Login Email")
+    out = await db.users.find_one({"id": uid}, {"_id": 0, "password_hash": 0})
+    out["temp_password"] = temp_password
+    out["email_sent"] = email_sent
+    out["email_recipients"] = [email]
+    return out
 
 
 @api.put("/teachers/{tid}")

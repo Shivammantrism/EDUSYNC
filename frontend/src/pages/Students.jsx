@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 import { UserPlus, Users, Search, Upload, Loader2 } from "lucide-react";
+import CredentialsDialog from "@/components/CredentialsDialog";
 
 export default function Students() {
   const { user } = useAuth();
@@ -25,7 +26,8 @@ export default function Students() {
   const [editId, setEditId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const blank = { name: "", age: "", gender: "Male", batch_id: "", parent_name: "", parent_phone: "", parent_email: "", monthly_fee: 2000, photo_url: "", template: "classic", password: "student123" };
+  const [credResult, setCredResult] = useState(null);
+  const blank = { name: "", age: "", gender: "Male", batch_id: "", email: "", parent_name: "", parent_phone: "", parent_email: "", monthly_fee: 2000, photo_url: "", template: "classic", password: "student123" };
   const [form, setForm] = useState(blank);
 
   const load = () => api.get("/students").then((r) => setStudents(r.data));
@@ -46,9 +48,13 @@ export default function Students() {
     setSaving(true);
     try {
       const payload = { ...form, age: Number(form.age), monthly_fee: Number(form.monthly_fee) };
-      if (editId) { await api.put(`/students/${editId}`, payload); toast.success("Student updated"); }
-      else { await api.post("/students", payload); toast.success("Student registered"); }
-      setOpen(false); setForm(blank); setEditId(null); load();
+      if (editId) { await api.put(`/students/${editId}`, payload); toast.success("Student updated"); setOpen(false); setForm(blank); setEditId(null); load(); }
+      else {
+        const { data } = await api.post("/students", payload);
+        toast.success(data.email_sent ? "Student registered — credentials emailed" : "Student registered — share credentials manually");
+        setOpen(false); setForm(blank); setEditId(null); load();
+        setCredResult({ ...data, roleLabel: "Student", loginIdLabel: "Student ID", loginId: data.student_id });
+      }
     } catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
     finally { setSaving(false); }
   };
@@ -60,7 +66,7 @@ export default function Students() {
   return (
     <div>
       <PageHeader title="Students" subtitle={`${students.length} enrolled`} actions={
-        user.role === "principal" && (
+        (user.role === "principal" || user.role === "teacher") && (
           <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setForm(blank); setEditId(null); } }}>
             <DialogTrigger asChild><Button data-testid="add-student-btn" onClick={() => { setForm(blank); setEditId(null); }} className="btn-gradient"><UserPlus className="h-4 w-4 mr-2" />Register Student</Button></DialogTrigger>
             <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
@@ -94,12 +100,13 @@ export default function Students() {
                   </Select>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><Label>Parent Name</Label><Input value={form.parent_name} onChange={(e) => setForm({ ...form, parent_name: e.target.value })} /></div>
+                  <div><Label>Parent Name</Label><Input data-testid="student-parent-name" value={form.parent_name} onChange={(e) => setForm({ ...form, parent_name: e.target.value })} /></div>
                   <div><Label>Parent Phone</Label><Input data-testid="student-parent-phone" value={form.parent_phone} onChange={(e) => setForm({ ...form, parent_phone: e.target.value })} /></div>
                 </div>
-                <div><Label>Parent / Student Email <span className="text-xs font-normal text-slate-400">(for fee receipts)</span></Label><Input data-testid="student-parent-email" type="email" value={form.parent_email} onChange={(e) => setForm({ ...form, parent_email: e.target.value })} placeholder="parent@example.com" /></div>
+                <div><Label>Parent / Guardian Email <span className="text-xs font-normal text-slate-400">(receipts & login)</span></Label><Input data-testid="student-parent-email" type="email" value={form.parent_email} onChange={(e) => setForm({ ...form, parent_email: e.target.value })} placeholder="parent@example.com" /></div>
+                <div><Label>Student Email <span className="text-xs font-normal text-slate-400">(optional — gets own login)</span></Label><Input data-testid="student-email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="student@example.com" /></div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><Label>Monthly Fee (₹)</Label><Input type="number" value={form.monthly_fee} onChange={(e) => setForm({ ...form, monthly_fee: e.target.value })} /></div>
+                  <div><Label>Monthly Fee (₹)</Label><Input data-testid="student-monthly-fee" type="number" value={form.monthly_fee} onChange={(e) => setForm({ ...form, monthly_fee: e.target.value })} /></div>
                   <div><Label>ID Card Template</Label>
                     <Select value={form.template} onValueChange={(v) => setForm({ ...form, template: v })}>
                       <SelectTrigger data-testid="student-template"><SelectValue /></SelectTrigger>
@@ -107,8 +114,11 @@ export default function Students() {
                     </Select>
                   </div>
                 </div>
-                <p className="text-xs text-slate-400">Default login password: <span className="font-mono">student123</span></p>
-                <div><Label>Login Password {editId && <span className="text-xs font-normal text-slate-400">(blank = keep unchanged)</span>}</Label><Input data-testid="student-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={editId ? "New password" : "student123"} /></div>
+                {editId ? (
+                  <div><Label>Login Password <span className="text-xs font-normal text-slate-400">(blank = keep unchanged)</span></Label><Input data-testid="student-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="New password" /></div>
+                ) : (
+                  <p className="text-xs text-slate-500 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2" data-testid="student-cred-note">A unique Student ID and temporary password are auto-generated and emailed to the student &amp; parent on save.</p>
+                )}
               </div>
               <DialogFooter><Button data-testid="save-student-btn" onClick={save} disabled={saving || !form.name} className="btn-gradient">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : (editId ? "Save Changes" : "Register")}</Button></DialogFooter>
             </DialogContent>
@@ -144,6 +154,8 @@ export default function Students() {
           </Table>
         )}
       </Card>
+
+      <CredentialsDialog result={credResult} onClose={() => setCredResult(null)} />
     </div>
   );
 }

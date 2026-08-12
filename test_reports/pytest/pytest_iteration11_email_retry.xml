@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="2.543" timestamp="2026-08-12T12:33:14.715944+00:00" hostname="agent-env-0571847a-299d-46cc-b578-8f74160cbe78"><testcase classname="tests.test_iteration11_notifications_credentials" name="test_principal_creates_teacher_with_generated_credentials_and_false_email" time="0.910"><failure message="assert True is False">backend/tests/test_iteration11_notifications_credentials.py:99: in test_principal_creates_teacher_with_generated_credentials_and_false_email
+    assert data["email_sent"] is False
+E   assert True is False</failure></testcase><testcase classname="tests.test_iteration11_notifications_credentials" name="test_teacher_creates_student_and_false_email_is_graceful" time="1.305"><failure message="assert True is False">backend/tests/test_iteration11_notifications_credentials.py:177: in test_teacher_creates_student_and_false_email_is_graceful
+    assert data["email_sent"] is False
+E   assert True is False</failure></testcase></testsuite></testsuites>
