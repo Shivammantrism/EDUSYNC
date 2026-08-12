@@ -58,6 +58,12 @@ Multi-institute management SaaS with two connected portals sharing one database.
 - Premium tri-color theme (deep navy / emerald / purple) applied app-wide: sidebar, header, avatar, KPI cards, charts, all primary buttons (.btn-gradient), module accents. Login shows subtle EduSync logo watermark; demo credentials removed from login.
 - Fixed backend crash (corrupt stray lines in server.py from prior fork).
 
+## Implemented (2026-06) — Message-161 features + premium theme
+- **Login page (v3 split layout)**: full-screen split — left branding panel with AI-generated purple/lavender school-scene background, bokeh, floating leaves, and floating live-stat glass cards (Attendance 96%, Today's Timetable, Total Students, QR Attendance, Performance chart) + bottom stats bar (Schools/Students/Teachers/Courses); right white/dark glass login card with logo, email/username + password show-hide, remember me, forgot password, purple→orange gradient Sign In (arrow), "Login with Institute Code" toggle, and a top-right dark-mode toggle. Visual only — auth unchanged (verified login reaches dashboard).
+- **Timetable**: fixed generation + AI-powered conflict-free generator (POST /timetable/generate with TimetableConfig {days, periods, teacher_ids, use_ai}; no teacher/room double-booking) and PDF download (GET /timetable/pdf, landscape grid per batch). Config dialog on Timetable.jsx. Verified via curl: 60 slots, 0 conflicts, PDF 200.
+- **Announcements**: principals AND teachers can post with optional PDF attachment; students view/download PDF; teachers delete only own. Verified via curl.
+- PDF watermark (report cards/receipts/salary), premium tri-color theme (navy/emerald/purple), master ID template + live preview, Class/Sections, complaint routing+PDF+status, teacher assigned leads.
+
 ## Backlog / Remaining (P2)
 - Add DialogDescription/aria-describedby to dialogs (LOW — console accessibility warning only).
 - Add error/catch states to page load effects (avoid indefinite loaders on API failure).

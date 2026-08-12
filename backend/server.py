@@ -388,6 +388,14 @@ class AnnouncementIn(BaseModel):
     title: str
     body: str
     audience: str = "all"  # all, teachers, students
+    attachment_url: Optional[str] = ""
+
+
+class TimetableConfig(BaseModel):
+    days: List[str] = []
+    periods: List[str] = []
+    teacher_ids: List[str] = []
+    use_ai: bool = True
 
 
 class ComplaintIn(BaseModel):
@@ -1035,16 +1043,22 @@ async def list_announcements(user=Depends(get_current_user)):
 
 
 @api.post("/announcements")
-async def create_announcement(body: AnnouncementIn, user=Depends(require("principal"))):
+async def create_announcement(body: AnnouncementIn, user=Depends(require("principal", "teacher"))):
     aid = str(uuid.uuid4())
     doc = body.model_dump()
-    doc.update({"id": aid, "institute_id": user["institute_id"], "author": user["name"], "created_at": now_iso()})
+    doc.update({"id": aid, "institute_id": user["institute_id"], "author": user["name"],
+                "author_role": user["role"], "created_at": now_iso()})
     await db.announcements.insert_one(doc)
     return await db.announcements.find_one({"id": aid}, {"_id": 0})
 
 
 @api.delete("/announcements/{aid}")
-async def del_announcement(aid: str, user=Depends(require("principal"))):
+async def del_announcement(aid: str, user=Depends(require("principal", "teacher"))):
+    ann = await db.announcements.find_one({"id": aid, "institute_id": user["institute_id"]}, {"_id": 0})
+    if not ann:
+        raise HTTPException(404, "Not found")
+    if user["role"] == "teacher" and ann.get("author") != user["name"]:
+        raise HTTPException(403, "You can only delete your own announcements")
     await db.announcements.delete_one({"id": aid, "institute_id": user["institute_id"]})
     return {"ok": True}
 
@@ -1126,32 +1140,151 @@ async def get_timetable(user=Depends(get_current_user), batch_id: Optional[str] 
 
 
 @api.post("/timetable/generate")
-async def generate_timetable(user=Depends(require("principal"))):
+async def generate_timetable(body: Optional[TimetableConfig] = None, user=Depends(require("principal"))):
+    body = body or TimetableConfig()
+    days = body.days or DAYS[:5]
+    periods = body.periods or SLOTS
     batches = await db.batches.find(scope(user), {"_id": 0}).to_list(1000)
     teachers = await db.users.find({"institute_id": user["institute_id"], "role": "teacher"}, {"_id": 0}).to_list(1000)
+    if body.teacher_ids:
+        teachers = [t for t in teachers if t["id"] in body.teacher_ids]
     on_leave = set()
     tstr = today_str()
     for lv in await db.leaves.find({"institute_id": user["institute_id"], "status": "approved"}, {"_id": 0}).to_list(1000):
         if lv["from_date"] <= tstr <= lv["to_date"]:
             on_leave.add(lv["teacher_id"])
+    avail = [t for t in teachers if t["id"] not in on_leave]
+    avail_ids = {t["id"] for t in avail}
+    tname = {t["id"]: t["name"] for t in teachers}
+    pool = []
+    for t in avail:
+        subs = t.get("subjects") or ([t.get("subject")] if t.get("subject") else [])
+        for s in subs:
+            if s:
+                pool.append({"subject": s, "teacher_id": t["id"], "teacher_name": t["name"]})
+
+    def batch_pool(b):
+        own = []
+        if b.get("teacher_id") in avail_ids:
+            own.append({"subject": b.get("subject") or "General", "teacher_id": b["teacher_id"], "teacher_name": tname.get(b["teacher_id"], "")})
+        combo = own + pool
+        return combo or [{"subject": b.get("subject") or "General", "teacher_id": b.get("teacher_id", ""), "teacher_name": tname.get(b.get("teacher_id", ""), "TBD")}]
+
     await db.timetable.delete_many(scope(user))
+    busy = set()       # (day, period, teacher_id) -> no teacher double-booking
+    room_busy = set()  # (day, period, room)
     entries = []
+    conflicts = 0
     for b in batches:
-        teacher = next((t for t in teachers if t["id"] == b.get("teacher_id") and t["id"] not in on_leave), None)
-        if not teacher:
-            teacher = next((t for t in teachers if t["id"] not in on_leave), None)
-        days = b.get("schedule_days") or DAYS[:5]
-        for i, day in enumerate(days):
-            slot = SLOTS[i % len(SLOTS)]
-            entries.append({"id": str(uuid.uuid4()), "batch_id": b["id"], "batch_name": b["name"], "day": day,
-                            "slot": slot, "subject": b.get("subject", ""), "room": b.get("room", ""),
-                            "teacher_id": teacher["id"] if teacher else "", "teacher_name": teacher["name"] if teacher else "TBD",
-                            "institute_id": user["institute_id"]})
+        cand = batch_pool(b)
+        room = b.get("room") or ""
+        idx = 0
+        for day in days:
+            for period in periods:
+                chosen = None
+                for k in range(len(cand)):
+                    c = cand[(idx + k) % len(cand)]
+                    tid = c["teacher_id"]
+                    if tid and (day, period, tid) in busy:
+                        continue
+                    if room and (day, period, room) in room_busy:
+                        continue
+                    chosen = c
+                    idx = idx + k + 1
+                    break
+                if chosen is None:
+                    conflicts += 1
+                    continue
+                if chosen["teacher_id"]:
+                    busy.add((day, period, chosen["teacher_id"]))
+                if room:
+                    room_busy.add((day, period, room))
+                entries.append({"id": str(uuid.uuid4()), "batch_id": b["id"], "batch_name": b["name"], "day": day,
+                                "slot": period, "subject": chosen["subject"], "room": room,
+                                "teacher_id": chosen["teacher_id"], "teacher_name": chosen["teacher_name"] or "TBD",
+                                "institute_id": user["institute_id"], "created_at": now_iso()})
+    ai_note = ""
+    if body.use_ai and entries:
+        try:
+            from emergentintegrations.llm.chat import LlmChat, UserMessage
+            chat = LlmChat(api_key=EMERGENT_KEY, session_id=f"ttgen-{user['institute_id']}",
+                           system_message="You are a school scheduling expert. In 2 short sentences, confirm the generated weekly timetable looks balanced and give one quick actionable tip. Plain text, no markdown.").with_model("gemini", "gemini-3-flash-preview")
+            ai_note = await chat.send_message(UserMessage(text=f"Generated {len(entries)} slots across {len(batches)} batches over days {days} and periods {periods}, with no teacher/room clashes. Comment briefly."))
+        except Exception as e:
+            logger.warning(f"AI note failed: {e}")
+            ai_note = "Timetable generated with no teacher or room clashes. Tip: keep core subjects in the morning periods for better focus."
     if entries:
         await db.timetable.insert_many(entries)
     for e in entries:
         e.pop("_id", None)
-    return {"ok": True, "count": len(entries), "entries": entries}
+    return {"ok": True, "count": len(entries), "conflicts": conflicts, "ai_note": ai_note, "days": days, "periods": periods}
+
+
+@api.get("/timetable/pdf")
+async def timetable_pdf(user=Depends(get_current_user), batch_id: Optional[str] = None):
+    q = scope(user)
+    if user["role"] == "student":
+        s = await db.students.find_one({"id": user["id"]})
+        q["batch_id"] = s.get("batch_id", "") if s else ""
+    elif user["role"] == "teacher":
+        q["batch_id"] = {"$in": await teacher_batches(user)}
+    elif batch_id:
+        q["batch_id"] = batch_id
+    rows = await db.timetable.find(q, {"_id": 0}).to_list(3000)
+    inst = await db.institutes.find_one({"id": user["institute_id"]})
+
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.units import cm
+    from reportlab.lib import colors
+    from reportlab.pdfgen import canvas
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=landscape(A4))
+    w, h = landscape(A4)
+    days_present = [d for d in DAYS if any(r["day"] == d for r in rows)] or DAYS[:5]
+    slots_present = sorted({r["slot"] for r in rows}) or SLOTS
+    batches = sorted({(r["batch_id"], r["batch_name"]) for r in rows}, key=lambda x: x[1])
+    if not batches:
+        batches = [("", "Weekly Timetable")]
+
+    def render(bid, bname):
+        draw_watermark(c, inst, w, h)
+        draw_letterhead(c, inst, w, h, "Weekly Class Timetable")
+        subset = [r for r in rows if (r["batch_id"] == bid)] if bid else rows
+        y = h - 4.6 * cm
+        c.setFillColor(colors.HexColor("#1E3A8A")); c.setFont("Helvetica-Bold", 13)
+        c.drawString(1.5 * cm, y, bname)
+        y -= 0.7 * cm
+        col_w = (w - 3 * cm) / (len(days_present) + 1)
+        row_h = 1.5 * cm
+        c.setFont("Helvetica-Bold", 9)
+        for i, lab in enumerate(["Time"] + days_present):
+            c.setFillColor(colors.HexColor("#7C3AED") if i == 0 else colors.HexColor("#1E3A8A"))
+            c.drawString(1.5 * cm + i * col_w + 0.15 * cm, y - 0.9 * cm, lab)
+        y -= row_h
+        c.setStrokeColor(colors.HexColor("#E2E8F0"))
+        for slot in slots_present:
+            c.rect(1.5 * cm, y - row_h, col_w, row_h, stroke=1, fill=0)
+            c.setFillColor(colors.HexColor("#64748B")); c.setFont("Helvetica", 7.5)
+            c.drawString(1.5 * cm + 0.12 * cm, y - 0.6 * cm, slot)
+            for i, d in enumerate(days_present):
+                x = 1.5 * cm + (i + 1) * col_w
+                c.rect(x, y - row_h, col_w, row_h, stroke=1, fill=0)
+                cell = next((r for r in subset if r["day"] == d and r["slot"] == slot), None)
+                if cell:
+                    c.setFillColor(colors.HexColor("#0F172A")); c.setFont("Helvetica-Bold", 7.5)
+                    c.drawString(x + 0.12 * cm, y - 0.6 * cm, str(cell.get("subject") or cell.get("batch_name") or "")[:20])
+                    c.setFillColor(colors.HexColor("#059669")); c.setFont("Helvetica", 6.5)
+                    c.drawString(x + 0.12 * cm, y - 1.0 * cm, str(cell.get("teacher_name") or "")[:22])
+            y -= row_h
+        c.setFillColor(colors.HexColor("#64748B")); c.setFont("Helvetica-Oblique", 8)
+        c.drawString(1.5 * cm, 1.1 * cm, "Generated by EduSync — Privam Solutions")
+
+    for i, (bid, bname) in enumerate(batches):
+        if i > 0:
+            c.showPage()
+        render(bid, bname)
+    c.showPage(); c.save(); buf.seek(0)
+    return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": "inline; filename=timetable.pdf"})
 
 
 # ---------------------------------------------------------------- report card PDF

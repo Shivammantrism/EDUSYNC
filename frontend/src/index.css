@@ -156,3 +156,38 @@ body {
   background-image: linear-gradient(120deg,#1e40af 0%,#7c3aed 55%,#8b5cf6 100%) !important;
   box-shadow: 0 10px 26px -8px rgba(124,58,237,0.62);
 }
+
+/* ---- Immersive login (v2) ---- */
+.mesh { position: absolute; border-radius: 9999px; filter: blur(90px); will-change: transform; }
+@keyframes meshDrift1 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(6vw,4vh) scale(1.15); } }
+@keyframes meshDrift2 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-7vw,-5vh) scale(1.1); } }
+@keyframes meshDrift3 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(5vw,-6vh) scale(1.2); } }
+@keyframes meshDrift4 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-5vw,6vh) scale(1.12); } }
+
+.light-ray { position: absolute; filter: blur(34px); mix-blend-mode: screen; will-change: opacity, transform; animation: rayPulse 9s ease-in-out infinite; }
+@keyframes rayPulse { 0%,100% { opacity: 0.10; } 50% { opacity: 0.30; } }
+
+@keyframes floatCardA { 0%,100% { transform: translateY(0) rotate(-4deg); } 50% { transform: translateY(-18px) rotate(-1deg); } }
+@keyframes floatCardB { 0%,100% { transform: translateY(0) rotate(4deg); } 50% { transform: translateY(-22px) rotate(1deg); } }
+@keyframes floatCardC { 0%,100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-14px) rotate(3deg); } }
+
+.ripple { position: absolute; border-radius: 9999px; background: rgba(255,255,255,0.45); transform: scale(0); animation: rippleAnim 0.6s ease-out; pointer-events: none; }
+@keyframes rippleAnim { to { transform: scale(2.6); opacity: 0; } }
+
+.login-btn-anim { background-size: 220% 220%; animation: btnFlow 6s ease infinite; }
+@keyframes btnFlow { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+
+@keyframes loginIn { from { opacity: 0; transform: translateY(26px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.login-in { animation: loginIn 0.7s cubic-bezier(0.22,1,0.36,1) both; }
+
+/* ---- Split login (v3) ---- */
+@keyframes leafFall {
+  0% { transform: translateY(-12%) translateX(0) rotate(0deg); opacity: 0; }
+  10% { opacity: 0.85; }
+  90% { opacity: 0.6; }
+  100% { transform: translateY(112vh) translateX(40px) rotate(360deg); opacity: 0; }
+}
+.leaf { position: absolute; animation: leafFall linear infinite; will-change: transform; pointer-events: none; }
+@keyframes bokehPulse { 0%,100% { opacity: 0.3; transform: scale(1); } 50% { opacity: 0.6; transform: scale(1.18); } }
+.bokeh { position: absolute; border-radius: 9999px; filter: blur(1px); animation: bokehPulse ease-in-out infinite; pointer-events: none; }
+.glass-light { background: rgba(255,255,255,0.16); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border: 1px solid rgba(255,255,255,0.25); }
