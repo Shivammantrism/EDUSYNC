@@ -120,6 +120,16 @@ Multi-institute management SaaS with two connected portals sharing one database.
 - **Auto-email receipt on payment**: `_auto_email_receipt()` fires (fire-and-forget) when a fee is marked paid (`/fees/{id}/mark-paid`) or paid online (`/fees/razorpay/verify`), emailing the student/parent the receipt PDF automatically. Verified: mark-paid triggered a 202 send.
 - Requires a student/parent email on file (captured in the student form); silently skips if none.
 
+## Implemented (2026-06, forked session, part 5) — Auto WhatsApp/SMS across events
+All use `notify_parent_async` (WhatsApp-first via TWILIO_WHATSAPP_FROM → SMS fallback):
+- **Payment received** → parent/student SMS + emailed receipt (on mark-paid & Razorpay verify).
+- **Student absent** → parent (deduped, existing).
+- **Complaint raised** → notifies the routed party (class teacher and/or principal).
+- **Complaint status update/response** → notifies the raiser (student's parent or teacher).
+- **Lead assigned** → the assigned teacher gets an SMS to follow up.
+- **Urgent notice** → announcement with audience "teachers" SMS-blasts all teachers.
+- Verified: dispatch fires for every event (logs show Twilio sends). Delivery blocked only by the **trial Twilio account** (error 21608, unverified demo numbers) — real/verified numbers deliver; WhatsApp activates when TWILIO_WHATSAPP_FROM is set.
+
 ## Verification status (forked session)
 - Backend curl-verified: ID migration/continuation, quiz create/attempt scoring w/ negative marking, batch-auth 403, insights buckets (red=3/orange=15), auto-absent dedup flag, student AI summary, student report PDF, homework/exam notify hooks present.
 - Frontend compiles clean (only pre-existing html5-qrcode source-map + react-hooks/exhaustive-deps warnings).

@@ -969,10 +969,13 @@ async def _auto_email_receipt(fee_id, institute_id):
         if not fee:
             return
         stu = await db.students.find_one({"id": fee["student_id"], "institute_id": institute_id})
+        inst = await db.institutes.find_one({"id": institute_id}) or {}
+        phone = (stu or {}).get("parent_phone") or (stu or {}).get("phone")
+        if phone:
+            asyncio.create_task(notify_parent_async(phone, f"Dear Parent, payment received for {(stu or {}).get('name', 'your ward')} ({fee.get('month')}). Amount: Rs.{fee.get('paid_amount', 0)}. Receipt {fee.get('receipt_no', '-')}. - {inst.get('name', 'EduSync')}"))
         to = (stu or {}).get("email") or (stu or {}).get("parent_email")
         if not to:
             return
-        inst = await db.institutes.find_one({"id": institute_id}) or {}
         resp = await fee_receipt(fee_id, {"institute_id": institute_id, "role": "principal", "id": "system"})
         pdf = await _response_pdf_bytes(resp)
         att = [{"filename": f"receipt_{fee.get('receipt_no', 'fee')}.pdf", "content": base64.b64encode(pdf).decode()}]
@@ -1430,6 +1433,11 @@ async def create_announcement(body: AnnouncementIn, user=Depends(require("princi
     doc.update({"id": aid, "institute_id": user["institute_id"], "author": user["name"],
                 "author_role": user["role"], "created_at": now_iso()})
     await db.announcements.insert_one(doc)
+    if body.audience == "teachers":
+        inst = await db.institutes.find_one({"id": user["institute_id"]}) or {}
+        async for t in db.users.find({"institute_id": user["institute_id"], "role": "teacher"}, {"_id": 0, "phone": 1}):
+            if t.get("phone"):
+                asyncio.create_task(notify_parent_async(t["phone"], f"Notice from {user['name']}: {body.title}. {body.body[:120]} - {inst.get('name', 'EduSync')}"))
     return await db.announcements.find_one({"id": aid}, {"_id": 0})
 
 
@@ -1471,6 +1479,15 @@ async def create_complaint(body: ComplaintIn, user=Depends(require("teacher", "s
                 "raised_by_role": user["role"], "directed_teacher_id": directed_teacher_id,
                 "status": "pending", "response": "", "audit": [], "created_at": now_iso()})
     await db.complaints.insert_one(doc)
+    inst = await db.institutes.find_one({"id": user["institute_id"]}) or {}
+    if body.direction in ("teacher", "both") and directed_teacher_id:
+        t = await db.users.find_one({"id": directed_teacher_id})
+        if t and t.get("phone"):
+            asyncio.create_task(notify_parent_async(t["phone"], f"New complaint '{body.subject}' from {user['name']}. Please review on EduSync. - {inst.get('name', 'EduSync')}"))
+    if body.direction in ("principal", "both"):
+        p = await db.users.find_one({"institute_id": user["institute_id"], "role": "principal"})
+        if p and p.get("phone"):
+            asyncio.create_task(notify_parent_async(p["phone"], f"New complaint '{body.subject}' from {user['name']} ({user['role']}). Please review on EduSync."))
     return await db.complaints.find_one({"id": cid}, {"_id": 0})
 
 
@@ -1488,6 +1505,16 @@ async def update_complaint(cid: str, body: ComplaintUpdate, user=Depends(require
     await db.complaints.update_one({"id": cid, "institute_id": user["institute_id"]},
                                    {"$set": {"status": body.status, "response": body.response or comp.get("response", ""), "updated_at": now_iso()},
                                     "$push": {"audit": entry}})
+    raiser_role = comp.get("raised_by_role")
+    phone = None
+    if raiser_role == "student":
+        rs = await db.students.find_one({"id": comp.get("raised_by_id")})
+        phone = (rs or {}).get("parent_phone") or (rs or {}).get("phone")
+    else:
+        ru = await db.users.find_one({"id": comp.get("raised_by_id")})
+        phone = (ru or {}).get("phone")
+    if phone:
+        asyncio.create_task(notify_parent_async(phone, f"Update on your complaint '{comp.get('subject')}': {body.status.replace('_', ' ').upper()}. {body.response or ''} - EduSync"))
     return await db.complaints.find_one({"id": cid}, {"_id": 0})
 
 
@@ -1557,6 +1584,9 @@ async def update_enquiry(eid: str, body: EnquiryUpdate, user=Depends(require("pr
     if "assigned_to" in upd:
         t = await db.users.find_one({"id": upd["assigned_to"], "institute_id": user["institute_id"]})
         upd["assigned_to_name"] = t["name"] if t else ""
+        if t and t.get("phone") and upd["assigned_to"]:
+            lead_name = enq.get("name") or enq.get("student_name") or enq.get("parent_name") or "a new lead"
+            asyncio.create_task(notify_parent_async(t["phone"], f"New admission lead '{lead_name}' assigned to you. Please follow up. - EduSync"))
     await db.enquiries.update_one({"id": eid, "institute_id": user["institute_id"]}, {"$set": upd})
     return await db.enquiries.find_one({"id": eid}, {"_id": 0})
 
