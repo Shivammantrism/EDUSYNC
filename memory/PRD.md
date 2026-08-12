@@ -141,6 +141,11 @@ All use `notify_parent_async` (WhatsApp-first via TWILIO_WHATSAPP_FROM → SMS f
 - **Inline parent-phone fix**: when a fee reminder can't be delivered, the row prompts to add/fix the parent's phone (PUT /students/{id}) and auto-retries the reminder. Verified path.
 - **Password reset**: student & teacher edit dialogs include a password field (blank = unchanged on edit); PUT /students/{id} and /teachers/{id} accept `password` → re-hash. Verified: reset then logged in with the new password.
 
+## Implemented (2026-06, forked session, part 8) — Free WhatsApp sharing
+- **WhatsApp click-to-chat (free, no Twilio)**: green WhatsApp button on each fee row opens wa.me with a pre-filled fee-reminder to the parent's number — zero SMS cost. Falls back to a clear toast if no phone on file.
+- Fixed a pre-existing file corruption (duplicated tail) in Fees.jsx that caused a parse error.
+- Direction "Communicate Without the Cost": built-in/free channels over paid SMS. NEXT: in-app Notification Center (🔔 bell) + PWA installability/alerts.
+
 ## Verification status (forked session)
 - Backend curl-verified: ID migration/continuation, quiz create/attempt scoring w/ negative marking, batch-auth 403, insights buckets (red=3/orange=15), auto-absent dedup flag, student AI summary, student report PDF, homework/exam notify hooks present.
 - Frontend compiles clean (only pre-existing html5-qrcode source-map + react-hooks/exhaustive-deps warnings).

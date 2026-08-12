@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Wallet, Plus, Bell, CheckCircle2, CreditCard, Loader2, Settings2, Trash2, Download, BellRing, Mail } from "lucide-react";
+import { Wallet, Plus, Bell, CheckCircle2, CreditCard, Loader2, Settings2, Trash2, Download, BellRing, Mail, MessageCircle } from "lucide-react";
 
 function loadRzp() {
   return new Promise((resolve) => {
@@ -80,6 +80,13 @@ export default function Fees() {
   };
   const remindAll = async () => { const { data } = await api.post("/fees/send-overdue-reminders"); toast.success(data.message); };
   const emailReceipt = async (id) => { try { const { data } = await api.post(`/fees/${id}/email-receipt`); toast.success(`Receipt emailed to ${data.to}`); } catch (e) { toast.error(formatErr(e.response?.data?.detail)); } };
+  const waShare = (f) => {
+    const digits = (f.parent_phone || "").replace(/\D/g, "");
+    if (!digits) { toast.error("No parent phone on file — add one via the student profile"); return; }
+    const due = (Number(f.amount) - Number(f.paid_amount || 0)).toFixed(0);
+    const text = `Dear Parent, this is a fee reminder from EduSync. Fee of Rs.${due} for ${f.student_name} (${f.month}) is due. Kindly pay at the earliest. Thank you.`;
+    window.open(`https://wa.me/${digits}?text=${encodeURIComponent(text)}`, "_blank");
+  };
 
   const payOnline = async (fee) => {
     setPaying(fee.id);
@@ -250,6 +257,7 @@ export default function Fees() {
                       {f.status !== "paid" && (isPrincipal ? (
                         <>
                           <Button data-testid={`remind-${f.id}`} size="sm" variant="outline" onClick={() => remind(f)}><Bell className="h-3.5 w-3.5" /></Button>
+                          <Button data-testid={`wa-${f.id}`} size="sm" variant="outline" className="text-emerald-600 border-emerald-200 hover:bg-emerald-50" title="Send free reminder on WhatsApp" onClick={() => waShare(f)}><MessageCircle className="h-3.5 w-3.5" /></Button>
                           <Button data-testid={`partial-${f.id}`} size="sm" variant="outline" onClick={() => setPartial(f)}>Partial</Button>
                           <Button data-testid={`markpaid-${f.id}`} size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => markPaid(f.id)}><CheckCircle2 className="h-3.5 w-3.5" /></Button>
                         </>
