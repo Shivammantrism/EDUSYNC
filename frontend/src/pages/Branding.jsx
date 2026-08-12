@@ -18,7 +18,7 @@ export default function Branding() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (institute) setForm({ name: institute.name || "", address: institute.address || "", phone: institute.phone || "", email: institute.email || "", logo_url: institute.logo_url || "", logo_path: institute.logo_path || "", id_template: institute.id_template || "classic", upi_id: institute.upi_id || "", metro: !!institute.metro });
+    if (institute) setForm({ name: institute.name || "", code: institute.code || "", address: institute.address || "", phone: institute.phone || "", email: institute.email || "", logo_url: institute.logo_url || "", logo_path: institute.logo_path || "", id_template: institute.id_template || "classic", upi_id: institute.upi_id || "", metro: !!institute.metro, collection_target: institute.collection_target || "" });
   }, [institute]);
   if (!form) return <Loader />;
 
@@ -51,7 +51,14 @@ export default function Branding() {
           <p className="text-xs text-slate-400 mt-3">Defaults to the EduSync logo until you upload your own.</p>
         </Card>
         <Card className="p-6 border-slate-200 md:col-span-2 card-premium space-y-4">
-          <div><Label>Institute Name</Label><Input data-testid="brand-name" className="mt-1.5" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="col-span-2"><Label>Institute Name</Label><Input data-testid="brand-name" className="mt-1.5" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
+            <div>
+              <Label>Institute Code</Label>
+              <Input data-testid="brand-code" className="mt-1.5 font-mono font-semibold uppercase" maxLength={4} value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 4) })} placeholder="e.g. PR" />
+              <p className="text-[11px] text-slate-400 mt-1">Prefix for all Student &amp; Faculty IDs</p>
+            </div>
+          </div>
           <div><Label>Address</Label><Textarea data-testid="brand-address" className="mt-1.5" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Street, City, State - PIN" /></div>
           <div className="grid grid-cols-2 gap-4">
             <div><Label>Phone</Label><Input data-testid="brand-phone" className="mt-1.5" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
@@ -59,14 +66,12 @@ export default function Branding() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div><Label>UPI ID (for receipt QR)</Label><Input data-testid="brand-upi" className="mt-1.5" value={form.upi_id} onChange={(e) => setForm({ ...form, upi_id: e.target.value })} placeholder="institute@bank" /></div>
-            <div>
-              <Label>City Type (salary HRA)</Label>
-              <label className="mt-2.5 flex items-center gap-2 text-sm text-slate-700">
-                <input type="checkbox" data-testid="brand-metro" checked={form.metro} onChange={(e) => setForm({ ...form, metro: e.target.checked })} className="rounded border-slate-300 text-violet-600" />
-                Metro city (HRA 50% of Basic)
-              </label>
-            </div>
+            <div><Label>Monthly Collection Target (₹)</Label><Input data-testid="brand-target" type="number" className="mt-1.5" value={form.collection_target} onChange={(e) => setForm({ ...form, collection_target: e.target.value })} placeholder="e.g. 500000" /></div>
           </div>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" data-testid="brand-metro" checked={form.metro} onChange={(e) => setForm({ ...form, metro: e.target.checked })} className="rounded border-slate-300 text-violet-600" />
+            Metro city (salary HRA 50% of Basic)
+          </label>
           <div>
             <Label>Master ID Card Template</Label>
             <p className="text-xs text-slate-400 mb-2">Applied to every student ID card automatically.</p>
@@ -90,7 +95,7 @@ export default function Branding() {
         </div>
         <p className="text-xs text-slate-400 mb-6">Updates instantly as you pick a template — this is exactly how student cards will print.</p>
         <div data-testid="idcard-live-preview" className="flex justify-center">
-          <IDCard student={{ name: "Aarav Sharma", student_id: "STU250012", age: 14, gender: "Male", parent_name: "Rajesh Sharma", template: form.id_template, photo_url: "" }} institute={form} />
+          <IDCard student={{ name: "Aarav Sharma", student_id: `${form.code || "IN"}${new Date().getFullYear()}0012`, age: 14, gender: "Male", parent_name: "Rajesh Sharma", template: form.id_template, photo_url: "" }} institute={form} />
         </div>
       </Card>
     </div>

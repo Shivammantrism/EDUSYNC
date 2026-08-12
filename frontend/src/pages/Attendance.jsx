@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import api, { formatErr } from "@/lib/api";
+import { useSearchParams } from "react-router-dom";
+import api, { formatErr, fmtDate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader, Loader, StatusBadge } from "@/components/common";
 import { Button } from "@/components/ui/button";
@@ -13,16 +14,20 @@ import { QrCode, Camera, CheckCircle2, UserCheck, ScanLine } from "lucide-react"
 export default function Attendance() {
   const { user } = useAuth();
   const isStaff = user.role !== "student";
+  const [sp] = useSearchParams();
   const [records, setRecords] = useState(null);
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [cls, setCls] = useState(sp.get("class") || "");
+  const [batches, setBatches] = useState([]);
   const [scanning, setScanning] = useState(false);
   const [lastScan, setLastScan] = useState(null);
   const [manualCode, setManualCode] = useState("");
   const [selfMarked, setSelfMarked] = useState(false);
   const scannerRef = useRef(null);
 
-  const load = () => api.get("/attendance", { params: { date_str: date } }).then((r) => setRecords(r.data));
-  useEffect(() => { load(); }, [date]);
+  const load = () => api.get("/attendance", { params: { date_str: date, ...(cls ? { batch_id: cls } : {}) } }).then((r) => setRecords(r.data));
+  useEffect(() => { load(); }, [date, cls]);
+  useEffect(() => { if (isStaff) api.get("/batches").then((r) => setBatches(r.data)).catch(() => {}); }, []);
 
   const startScan = async () => {
     setScanning(true);
@@ -82,9 +87,18 @@ export default function Attendance() {
             )}
           </Card>
           <Card className="p-6 border-slate-200 lg:col-span-2">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
               <h3 className="font-semibold font-heading">Attendance Records</h3>
-              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-auto" data-testid="attendance-date" />
+              <div className="flex items-center gap-2">
+                <Select value={cls || "all"} onValueChange={(v) => setCls(v === "all" ? "" : v)}>
+                  <SelectTrigger data-testid="attendance-class-filter" className="w-auto min-w-[150px]"><SelectValue placeholder="All classes" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All classes</SelectItem>
+                    {batches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-auto" data-testid="attendance-date" />
+              </div>
             </div>
             <RecordsTable records={records} />
           </Card>
@@ -109,7 +123,7 @@ function RecordsTable({ records, hideName }) {
         {records.map((r) => (
           <TableRow key={r.id}>
             {!hideName && <TableCell className="font-medium">{r.student_name}</TableCell>}
-            <TableCell>{r.date}</TableCell>
+            <TableCell>{fmtDate(r.date)}</TableCell>
             <TableCell><StatusBadge status={r.status} /></TableCell>
             <TableCell className="text-slate-400 text-xs">{new Date(r.marked_at).toLocaleTimeString()}</TableCell>
           </TableRow>

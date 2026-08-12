@@ -22,6 +22,9 @@ import Enquiries from "@/pages/Enquiries";
 import IDCardPage from "@/pages/IDCardPage";
 import Branding from "@/pages/Branding";
 import BulkIDCards from "@/pages/BulkIDCards";
+import FacultyIDCards from "@/pages/FacultyIDCards";
+import Quizzes from "@/pages/Quizzes";
+import Gallery from "@/pages/Gallery";
 import PrivacyPolicy from "@/pages/PrivacyPolicy";
 import Terms from "@/pages/Terms";
 import { Loader } from "@/components/common";
@@ -60,6 +63,7 @@ function App() {
               <Route path="timetable" element={<Timetable />} />
               <Route path="fees" element={<Fees />} />
               <Route path="exams" element={<Exams />} />
+              <Route path="quizzes" element={<Quizzes />} />
               <Route path="homework" element={<Homework />} />
               <Route path="salary" element={<Salary />} />
               <Route path="leaves" element={<Leaves />} />
@@ -69,6 +73,8 @@ function App() {
               <Route path="idcard" element={<IDCardPage />} />
               <Route path="settings" element={<Branding />} />
               <Route path="print-ids/:batchId" element={<BulkIDCards />} />
+              <Route path="faculty-ids" element={<FacultyIDCards />} />
+              <Route path="gallery" element={<Gallery />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

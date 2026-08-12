@@ -29,7 +29,7 @@ export default function Batches() {
   useEffect(() => { load(); api.get("/teachers").then((r) => setTeachers(r.data)); }, []);
 
   const save = async () => {
-    try { await api.post("/batches", form); toast.success("Batch created"); setOpen(false); setForm({ name: "", subject: "", teacher_id: "", room: "", class_name: "", section: "", schedule_days: DAYS.slice(0, 5) }); load(); }
+    try { await api.post("/batches", form); toast.success("Class created"); setOpen(false); setForm({ name: "", subject: "", teacher_id: "", room: "", class_name: "", section: "", schedule_days: DAYS.slice(0, 5) }); load(); }
     catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
   };
   const del = async (id) => { await api.delete(`/batches/${id}`); toast.success("Deleted"); load(); };
@@ -61,13 +61,13 @@ export default function Batches() {
   if (!batches) return <Loader />;
   return (
     <div>
-      <PageHeader title="Batches & Classes" subtitle={`${batches.length} active batches`} actions={
+      <PageHeader title="Classes & Sections" subtitle={`${batches.length} classes`} actions={
         <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild><Button data-testid="add-batch-btn" className="btn-gradient"><Plus className="h-4 w-4 mr-2" />New Batch</Button></DialogTrigger>
+          <DialogTrigger asChild><Button data-testid="add-batch-btn" className="btn-gradient"><Plus className="h-4 w-4 mr-2" />New Class</Button></DialogTrigger>
           <DialogContent>
-            <DialogHeader><DialogTitle>Create Batch</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle>Create a Class</DialogTitle></DialogHeader>
             <div className="space-y-3">
-              <div><Label>Batch Name</Label><Input data-testid="batch-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Class 10-A" /></div>
+              <div><Label>Class Name</Label><Input data-testid="batch-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Class 10-A" /></div>
               <div><Label>Subject</Label><Input data-testid="batch-subject" value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} /></div>
               <div className="grid grid-cols-2 gap-3">
                 <div><Label>Class</Label>
@@ -95,7 +95,7 @@ export default function Batches() {
           </DialogContent>
         </Dialog>
       } />
-      {batches.length === 0 ? <Empty icon={GraduationCap} title="No batches yet" /> : (
+      {batches.length === 0 ? <Empty icon={GraduationCap} title="No classes yet" /> : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {batches.map((b) => (
             <Card key={b.id} data-testid={`batch-card-${b.id}`} className="p-5 border-slate-200 stat-card">

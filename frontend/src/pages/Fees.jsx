@@ -167,6 +167,21 @@ export default function Fees() {
             <p className="font-semibold text-slate-800 font-heading flex items-center gap-2"><CreditCard className="h-4 w-4 text-violet-600" />Collections · Online vs Cash</p>
             <span className="text-sm font-bold text-slate-700">{money(stats.total)} total</span>
           </div>
+          {stats.target > 0 && (
+            <div data-testid="collection-goal" className="flex items-center gap-4 mb-4 p-3 rounded-xl bg-slate-50 border border-slate-100">
+              <svg width="64" height="64" viewBox="0 0 64 64" className="shrink-0">
+                <circle cx="32" cy="32" r="27" fill="none" stroke="#e2e8f0" strokeWidth="8" />
+                <circle cx="32" cy="32" r="27" fill="none" stroke="#7c3aed" strokeWidth="8" strokeLinecap="round"
+                  strokeDasharray={2 * Math.PI * 27} strokeDashoffset={2 * Math.PI * 27 * (1 - Math.min(stats.target_pct, 100) / 100)}
+                  transform="rotate(-90 32 32)" />
+                <text x="32" y="37" textAnchor="middle" className="fill-slate-700 font-bold" fontSize="13">{Math.round(stats.target_pct)}%</text>
+              </svg>
+              <div>
+                <p className="text-xs text-slate-500">This month's goal ({stats.current_month})</p>
+                <p className="text-sm font-bold text-slate-800">{money(stats.this_month)} <span className="font-medium text-slate-400">of {money(stats.target)}</span></p>
+              </div>
+            </div>
+          )}
           <div className="flex h-3 w-full rounded-full overflow-hidden bg-slate-100">
             <div className="bg-violet-500 h-full" style={{ width: `${stats.online_pct}%` }} />
             <div className="bg-emerald-500 h-full" style={{ width: `${stats.cash_pct}%` }} />

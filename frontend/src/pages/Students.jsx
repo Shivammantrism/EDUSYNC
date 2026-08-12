@@ -82,9 +82,9 @@ export default function Students() {
                     </Select>
                   </div>
                 </div>
-                <div><Label>Batch</Label>
+                <div><Label>Class</Label>
                   <Select value={form.batch_id} onValueChange={(v) => setForm({ ...form, batch_id: v })}>
-                    <SelectTrigger data-testid="student-batch"><SelectValue placeholder="Select batch" /></SelectTrigger>
+                    <SelectTrigger data-testid="student-batch"><SelectValue placeholder="Select class" /></SelectTrigger>
                     <SelectContent>{batches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}{b.class_name ? ` · ${b.class_name}${b.section ? "-" + b.section : ""}` : ""}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>

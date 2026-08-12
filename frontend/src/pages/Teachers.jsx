@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import api, { formatErr } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
 import { PageHeader, Loader, Empty } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -8,11 +9,14 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { UserPlus, Users, Trash2 } from "lucide-react";
+import { UserPlus, Users, Trash2, IdCard, Printer } from "lucide-react";
+import IDCard from "@/components/IDCard";
 
 export default function Teachers() {
+  const { institute } = useAuth();
   const [teachers, setTeachers] = useState(null);
   const [open, setOpen] = useState(false);
+  const [idCardFor, setIdCardFor] = useState(null);
   const [form, setForm] = useState({ name: "", email: "", password: "teacher123", phone: "", subjects: "", monthly_salary: 30000 });
 
   const load = () => api.get("/teachers").then((r) => setTeachers(r.data));
@@ -51,23 +55,41 @@ export default function Teachers() {
       <Card className="border-slate-200">
         {teachers.length === 0 ? <Empty icon={Users} title="No teachers yet" /> : (
           <Table>
-            <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Email</TableHead><TableHead>Subjects</TableHead><TableHead>Phone</TableHead><TableHead className="text-right">Salary</TableHead><TableHead>Leave</TableHead><TableHead></TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Faculty ID</TableHead><TableHead>Email</TableHead><TableHead>Subjects</TableHead><TableHead>Phone</TableHead><TableHead className="text-right">Salary</TableHead><TableHead>Leave</TableHead><TableHead></TableHead></TableRow></TableHeader>
             <TableBody>
               {teachers.map((t) => (
                 <TableRow key={t.id} data-testid={`teacher-row-${t.id}`}>
                   <TableCell><div className="flex items-center gap-3"><div className="h-9 w-9 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-semibold">{t.name[0]}</div><span className="font-medium">{t.name}</span></div></TableCell>
+                  <TableCell className="font-mono text-xs text-slate-500">{t.faculty_id || "—"}</TableCell>
                   <TableCell className="text-slate-500">{t.email}</TableCell>
                   <TableCell className="text-slate-500">{(t.subjects || []).join(", ")}</TableCell>
                   <TableCell className="text-slate-500">{t.phone}</TableCell>
                   <TableCell className="text-right">₹{t.monthly_salary}</TableCell>
                   <TableCell>{t.leave_balance ?? 12}d</TableCell>
-                  <TableCell><button data-testid={`del-teacher-${t.id}`} onClick={() => del(t.id)} className="text-slate-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button></TableCell>
+                  <TableCell>
+                    <div className="flex items-center justify-end gap-2">
+                      <button data-testid={`view-id-${t.id}`} onClick={() => setIdCardFor(t)} className="text-slate-300 hover:text-violet-600" title="View ID card"><IdCard className="h-4 w-4" /></button>
+                      <button data-testid={`del-teacher-${t.id}`} onClick={() => del(t.id)} className="text-slate-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+                    </div>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         )}
       </Card>
+
+      <Dialog open={!!idCardFor} onOpenChange={(o) => !o && setIdCardFor(null)}>
+        <DialogContent data-testid="faculty-id-dialog">
+          <DialogHeader><DialogTitle>Faculty ID Card</DialogTitle></DialogHeader>
+          {idCardFor && (
+            <div className="flex flex-col items-center gap-4 pt-2">
+              <div id="print-area"><IDCard student={idCardFor} institute={institute} variant="faculty" /></div>
+              <Button data-testid="print-faculty-id-btn" onClick={() => window.print()} className="no-print btn-gradient"><Printer className="h-4 w-4 mr-2" />Print / Save as PDF</Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

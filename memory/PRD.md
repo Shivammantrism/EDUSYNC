@@ -84,3 +84,33 @@ Multi-institute management SaaS with two connected portals sharing one database.
 ## Next Tasks
 - Activate real SMS by adding Twilio credentials.
 - Optional: monthly recurring reminder cron.
+
+## Implemented (2026-06, forked session) — ID standardization, MCQ engine, notifications, student portal, login redesign
+- **ID generation standardized**: Student IDs `<CODE><YEAR>NNNN` (e.g. DP20260001), Faculty IDs `<CODE><YEAR>TNNN` (e.g. DP2026T001). Institute code auto-derived from name AND editable in Settings (brand-code); atomic per-institute counters (student_seq/faculty_seq). Startup `migrate_ids()` renumbers legacy records idempotently. Institute code shown on Principal dashboard (institute-code-badge).
+- **Faculty ID cards**: IDCard.jsx supports variant="faculty"; per-teacher View-ID dialog on Teachers page + dedicated bulk `/app/faculty-ids` page.
+- **MCQ Online Test engine** (new): teacher builder with per-test marks_per_correct & negative_marks, manual questions + AI generate-from-topic (Gemini via Emergent key); student TIMED attempt (auto-submit on timeout), auto-grade, scorecard with correct-answer review; teacher results leaderboard + analytics. Quiz access scoped to student's batch/institute (403 otherwise).
+- **Homework PDF**: assignments accept a PDF attachment; students submit via PDF upload OR text note; teacher marks reviewed/pending.
+- **Report card remarks**: editable "Teacher's Remarks" per student (StudentDetail), rendered in the report-card PDF.
+- **AI Insights reworked** to 4 live rule-based buckets: RED attendance<75%, ORANGE fee overdue >30 days, YELLOW 2 consecutive exam-score drops, GREEN attendance>90% AND top-10% marks.
+- **Parent notifications**: WhatsApp-first via Twilio (TWILIO_WHATSAPP_FROM, `whatsapp:` prefix) with automatic SMS fallback (`notify_parent`). Events: student marked absent (auto, deduped once/day via parent_notified flag), fee overdue reminder, exam result published, new homework assigned. TWILIO_WHATSAPP_FROM is empty by default → falls back to SMS until the user pastes a WhatsApp sender.
+- **Student portal**: My Report Card PDF download, "View Answers" for completed MCQ tests, AI Performance Insights card (attendance/avg/fee + GET /student/ai-summary).
+- **Login page redesigned**: removed all marketing (school/student/teacher stats bars, floating feature cards, demo placeholders, dark-mode toggle, institute-code toggle). Clean minimal card: logo, username/email, password, remember me, forgot password, sign in. Deep blue→teal→emerald gradient. Privacy/Terms still linked; register + forgot-password preserved.
+
+## Implemented (2026-06, forked session, part 2) — Class rename, Gallery, Dashboards
+- **"Batch" → "Class / Section"** in all UI labels (nav, Classes page, dropdowns in Students/Exams/Homework/Quizzes/Attendance). Data field `batch_id` and `/batches` endpoint unchanged.
+- **Principal dashboard quick-enter**: `ClassQuickCards` — per-class cards with Attendance / Students / Homework buttons; Attendance deep-links with `?class=<id>` and pre-selects a class filter (attendance-class-filter).
+- **Date format DD-MM-YYYY** helper `fmtDate` (frontend) + `fmt_date` (backend); applied to Attendance rows, Homework due dates, and parent SMS/WhatsApp messages (absent/homework/fee). NOTE: not yet applied to Exams/Leaves screens and leave emails — pending.
+- **Photo Gallery** (`/app/gallery`, nav for all roles): principal & teachers upload photos (title + Institute shared album OR per-class album); album filter chips; staff delete. Backend GET/POST/DELETE /gallery with institute-scoped class validation + blank-image rejection.
+- **Teacher dashboard assigned leads** now have an editable status dropdown (teacher-lead-stage-<id>) reflecting to the principal pipeline. Backend `PUT /enquiries/{id}` now enforces teacher ownership (403 on non-owned) and restricts teachers to stage/status/notes.
+- **Premium Announcements panel** on Student & Teacher dashboards (data-testid=dashboard-announcements): dark gradient card, glow orbs, glass tiles, audience badge, author + DD-MM-YYYY date. Reads GET /announcements.
+
+## Known pending (from QA code review) — for next session
+- Date DD-MM-YYYY not yet applied to Exams/Leaves screens, leave emails, and PDFs (receipts/report cards/slips).
+- Students/Homework pages don't yet read `?class=` to pre-filter (only Attendance does).
+- Gallery students only get All/Institute album chips (don't fetch /batches) — add class chips for students.
+- server.py is ~2.5k lines — split by domain (refactor).
+
+## Verification status (forked session)
+- Backend curl-verified: ID migration/continuation, quiz create/attempt scoring w/ negative marking, batch-auth 403, insights buckets (red=3/orange=15), auto-absent dedup flag, student AI summary, student report PDF, homework/exam notify hooks present.
+- Frontend compiles clean (only pre-existing html5-qrcode source-map + react-hooks/exhaustive-deps warnings).
+- NOTE: Live UI screenshots blocked by the platform preview idle-gate ("Wake up servers"); the frontend is running (compiles clean, /api reachable on same domain).

@@ -5,6 +5,7 @@ import { PageHeader, Loader, StatusBadge } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import IDCard from "@/components/IDCard";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
@@ -17,8 +18,13 @@ export default function StudentDetail() {
   const [uploading, setUploading] = useState(false);
   const [summary, setSummary] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
+  const [remarks, setRemarks] = useState("");
+  const [savingRemarks, setSavingRemarks] = useState(false);
 
-  const load = () => api.get(`/students/${id}`).then((r) => setS(r.data));
+  const load = () => api.get(`/students/${id}`).then((r) => {
+    setS(r.data);
+    setRemarks(r.data.remarks || "");
+  });
   useEffect(() => { load(); }, [id]);
   if (!s) return <Loader />;
 
@@ -44,6 +50,12 @@ export default function StudentDetail() {
     try { const { data } = await api.post("/ai/report-summary", { student_id: id }); setSummary(data.summary); }
     catch (e) { toast.error("AI summary failed"); }
     finally { setAiLoading(false); }
+  };
+  const saveRemarks = async () => {
+    setSavingRemarks(true);
+    try { await api.put(`/students/${id}/remarks`, { remarks }); toast.success("Remarks saved — included in report card"); }
+    catch (e) { toast.error("Failed to save remarks"); }
+    finally { setSavingRemarks(false); }
   };
 
   return (
@@ -81,6 +93,15 @@ export default function StudentDetail() {
                     <Button data-testid="ai-summary-btn" size="sm" variant="outline" onClick={genSummary} disabled={aiLoading}>{aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Generate"}</Button>
                   </div>
                   {summary && <p className="text-sm text-slate-600 bg-indigo-50 rounded-lg p-3 leading-relaxed">{summary}</p>}
+                </div>
+              )}
+              {user.role !== "student" && (
+                <div className="mt-6 pt-6 border-t border-slate-100">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="font-semibold text-sm">Teacher's Remarks <span className="text-xs font-normal text-slate-400">· shown on report card</span></h4>
+                    <Button data-testid="save-remarks-btn" size="sm" variant="outline" onClick={saveRemarks} disabled={savingRemarks}>{savingRemarks ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}</Button>
+                  </div>
+                  <Textarea data-testid="remarks-input" value={remarks} onChange={(e) => setRemarks(e.target.value)} rows={3} placeholder="Add remarks for the report card (e.g. conduct, strengths, areas to improve)..." />
                 </div>
               )}
             </Card>

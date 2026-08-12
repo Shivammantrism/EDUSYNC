@@ -6,25 +6,28 @@ import { MODULE_ACCENTS } from "@/lib/modules";
 import {
   LayoutDashboard, Users, GraduationCap, CalendarCheck, Wallet, FileText,
   BookOpen, Megaphone, MessageSquareWarning, UserPlus, CalendarDays, Banknote,
-  LogOut, Menu, X, PlaneTakeoff, IdCard, Settings,
+  LogOut, Menu, X, PlaneTakeoff, IdCard, Settings, ListChecks, Images,
 } from "lucide-react";
 
 const NAV = {
   principal: [
     ["/app/dashboard", "Dashboard", LayoutDashboard, "dashboard"],
     ["/app/students", "Students", Users, "students"],
-    ["/app/batches", "Batches & Classes", GraduationCap, "batches"],
+    ["/app/batches", "Classes & Sections", GraduationCap, "batches"],
     ["/app/teachers", "Teachers & Staff", Users, "teachers"],
+    ["/app/faculty-ids", "Faculty ID Cards", IdCard, "idcard"],
     ["/app/attendance", "Attendance", CalendarCheck, "attendance"],
     ["/app/timetable", "Timetable", CalendarDays, "timetable"],
     ["/app/fees", "Fee Management", Wallet, "fees"],
     ["/app/exams", "Exams & Results", FileText, "exams"],
+    ["/app/quizzes", "Online Tests", ListChecks, "quizzes"],
     ["/app/homework", "Homework", BookOpen, "homework"],
     ["/app/salary", "Staff Salary", Banknote, "salary"],
     ["/app/leaves", "Leave Requests", PlaneTakeoff, "leaves"],
     ["/app/announcements", "Announcements", Megaphone, "announcements"],
     ["/app/complaints", "Complaints", MessageSquareWarning, "complaints"],
     ["/app/enquiries", "Admission Enquiries", UserPlus, "enquiries"],
+    ["/app/gallery", "Photo Gallery", Images, "gallery"],
     ["/app/settings", "Institute Branding", Settings, "settings"],
   ],
   teacher: [
@@ -33,11 +36,13 @@ const NAV = {
     ["/app/attendance", "Attendance", CalendarCheck, "attendance"],
     ["/app/timetable", "Timetable", CalendarDays, "timetable"],
     ["/app/exams", "Exams & Marks", FileText, "exams"],
+    ["/app/quizzes", "Online Tests", ListChecks, "quizzes"],
     ["/app/homework", "Homework", BookOpen, "homework"],
     ["/app/salary", "My Salary", Banknote, "salary"],
     ["/app/leaves", "My Leaves", PlaneTakeoff, "leaves"],
     ["/app/announcements", "Announcements", Megaphone, "announcements"],
     ["/app/complaints", "Complaints", MessageSquareWarning, "complaints"],
+    ["/app/gallery", "Photo Gallery", Images, "gallery"],
   ],
   student: [
     ["/app/dashboard", "Dashboard", LayoutDashboard, "dashboard"],
@@ -45,10 +50,12 @@ const NAV = {
     ["/app/attendance", "My Attendance", CalendarCheck, "attendance"],
     ["/app/fees", "Fees & Receipts", Wallet, "fees"],
     ["/app/exams", "My Results", FileText, "exams"],
+    ["/app/quizzes", "Online Tests", ListChecks, "quizzes"],
     ["/app/homework", "Homework", BookOpen, "homework"],
     ["/app/idcard", "Digital ID Card", IdCard, "idcard"],
     ["/app/announcements", "Announcements", Megaphone, "announcements"],
     ["/app/complaints", "Complaints", MessageSquareWarning, "complaints"],
+    ["/app/gallery", "Photo Gallery", Images, "gallery"],
   ],
 };
 

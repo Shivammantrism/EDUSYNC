@@ -74,9 +74,9 @@ export default function Exams() {
             <DialogHeader><DialogTitle>Create Exam</DialogTitle></DialogHeader>
             <div className="space-y-3">
               <div><Label>Exam Name</Label><Input data-testid="exam-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Unit Test 1" /></div>
-              <div><Label>Batch</Label>
+              <div><Label>Class</Label>
                 <Select value={form.batch_id} onValueChange={(v) => { const b = batches.find((x) => x.id === v); setForm({ ...form, batch_id: v, subject: b?.subject || "" }); }}>
-                  <SelectTrigger data-testid="exam-batch"><SelectValue placeholder="Select batch" /></SelectTrigger>
+                  <SelectTrigger data-testid="exam-batch"><SelectValue placeholder="Select class" /></SelectTrigger>
                   <SelectContent>{batches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
@@ -118,7 +118,7 @@ export default function Exams() {
                 <Input data-testid={`marks-input-${s.id}`} type="number" className="w-24" placeholder="0" value={marks[s.id] || ""} onChange={(e) => setMarks({ ...marks, [s.id]: e.target.value })} />
               </div>
             ))}
-            {students.length === 0 && <p className="text-sm text-slate-400">No students in this batch.</p>}
+            {students.length === 0 && <p className="text-sm text-slate-400">No students in this class.</p>}
           </div>
           <DialogFooter><Button data-testid="save-marks-btn" onClick={saveMarks} className="btn-gradient">Save & Rank</Button></DialogFooter>
         </DialogContent>

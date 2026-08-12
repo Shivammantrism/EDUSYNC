@@ -119,6 +119,18 @@ async def send_email(to, subject, html):
         return False
 
 
+def fmt_date(s):
+    if not s:
+        return ""
+    try:
+        return datetime.fromisoformat(str(s)[:19]).strftime("%d-%m-%Y")
+    except Exception:
+        try:
+            return datetime.strptime(str(s)[:10], "%Y-%m-%d").strftime("%d-%m-%Y")
+        except Exception:
+            return str(s)
+
+
 def send_sms(to, body):
     sid = os.environ.get("TWILIO_ACCOUNT_SID")
     tok = os.environ.get("TWILIO_AUTH_TOKEN")
@@ -137,6 +149,42 @@ def send_sms(to, body):
     except Exception as e:
         logger.warning(f"SMS error: {e}")
         return False
+
+
+def send_whatsapp(to, body):
+    sid = os.environ.get("TWILIO_ACCOUNT_SID")
+    tok = os.environ.get("TWILIO_AUTH_TOKEN")
+    frm = os.environ.get("TWILIO_WHATSAPP_FROM")
+    if not (sid and tok and frm and to):
+        return False
+    to = to.strip()
+    if not to.startswith("+"):
+        to = "+91" + to.lstrip("0")
+    frm2 = frm if frm.startswith("whatsapp:") else f"whatsapp:{frm}"
+    try:
+        r = requests.post(f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json",
+                          auth=(sid, tok), data={"From": frm2, "To": f"whatsapp:{to}", "Body": body}, timeout=15)
+        if r.status_code >= 300:
+            logger.warning(f"WhatsApp failed {r.status_code}: {r.text[:200]}")
+        return r.status_code < 300
+    except Exception as e:
+        logger.warning(f"WhatsApp error: {e}")
+        return False
+
+
+def notify_parent(phone, body):
+    """Try WhatsApp first, fall back to SMS. Returns the channel used or False."""
+    if not phone:
+        return False
+    if send_whatsapp(phone, body):
+        return "whatsapp"
+    if send_sms(phone, body):
+        return "sms"
+    return False
+
+
+async def notify_parent_async(phone, body):
+    return await asyncio.to_thread(notify_parent, phone, body)
 
 
 def _logo_bytes(inst):
@@ -346,11 +394,42 @@ class HomeworkIn(BaseModel):
     batch_id: str
     subject: Optional[str] = ""
     deadline: str
+    attachment_url: Optional[str] = ""
+    attachment_name: Optional[str] = ""
 
 
 class SubmissionIn(BaseModel):
     homework_id: str
-    content: str
+    content: Optional[str] = ""
+    attachment_url: Optional[str] = ""
+    attachment_name: Optional[str] = ""
+
+
+class QuestionIn(BaseModel):
+    text: str
+    options: List[str]
+    correct: int
+
+
+class QuizIn(BaseModel):
+    name: str
+    batch_id: str
+    subject: Optional[str] = ""
+    duration_min: int = 30
+    marks_per_correct: float = 1
+    negative_marks: float = 0
+    questions: List[QuestionIn]
+
+
+class QuizAttemptIn(BaseModel):
+    quiz_id: str
+    answers: dict
+
+
+class QuizGenIn(BaseModel):
+    topic: str
+    count: int = 5
+    subject: Optional[str] = ""
 
 
 class SalaryIn(BaseModel):
@@ -446,7 +525,9 @@ async def register_institute(body: RegisterInstitute):
     if await db.users.find_one({"email": email}):
         raise HTTPException(400, "Email already registered")
     inst_id = str(uuid.uuid4())
-    await db.institutes.insert_one({"id": inst_id, "name": body.institute_name, "created_at": now_iso()})
+    prefix = ("".join(w[0] for w in body.institute_name.split() if w)[:2] or "IN").upper()
+    await db.institutes.insert_one({"id": inst_id, "name": body.institute_name, "code": prefix,
+                                    "student_seq": 0, "faculty_seq": 0, "created_at": now_iso()})
     uid = str(uuid.uuid4())
     await db.users.insert_one({
         "id": uid, "email": email, "password_hash": hash_pw(body.password),
@@ -517,8 +598,17 @@ async def serve_file(path: str):
 
 
 # ---------------------------------------------------------------- students
-def gen_student_id(inst_name):
-    return "STU" + datetime.now().strftime("%y") + uuid.uuid4().hex[:5].upper()
+def inst_prefix(inst):
+    code = (inst.get("code") or "").strip()
+    if code:
+        return code.upper()[:4]
+    parts = [w[0] for w in (inst.get("name") or "IN").split() if w]
+    return ("".join(parts[:2]) or "IN").upper()
+
+
+async def next_seq(institute_id, field):
+    res = await db.institutes.find_one_and_update({"id": institute_id}, {"$inc": {field: 1}})
+    return ((res or {}).get(field, 0) or 0) + 1
 
 
 @api.get("/students")
@@ -535,8 +625,12 @@ async def list_students(user=Depends(require("principal", "teacher")), batch_id:
 @api.post("/students")
 async def create_student(body: StudentIn, user=Depends(require("principal"))):
     inst = await db.institutes.find_one({"id": user["institute_id"]})
+    prefix = inst_prefix(inst)
+    if not inst.get("code"):
+        await db.institutes.update_one({"id": user["institute_id"]}, {"$set": {"code": prefix}})
     sid = str(uuid.uuid4())
-    student_id = gen_student_id(inst["name"])
+    seq = await next_seq(user["institute_id"], "student_seq")
+    student_id = f"{prefix}{datetime.now().strftime('%Y')}{seq:04d}"
     doc = body.model_dump()
     doc.update({"id": sid, "student_id": student_id, "institute_id": user["institute_id"],
                 "password_hash": hash_pw(body.password or "student123"), "documents": [],
@@ -603,9 +697,15 @@ async def create_teacher(body: TeacherIn, user=Depends(require("principal"))):
     if await db.users.find_one({"email": email}):
         raise HTTPException(400, "Email already registered")
     uid = str(uuid.uuid4())
+    inst = await db.institutes.find_one({"id": user["institute_id"]})
+    prefix = inst_prefix(inst)
+    if not inst.get("code"):
+        await db.institutes.update_one({"id": user["institute_id"]}, {"$set": {"code": prefix}})
+    seq = await next_seq(user["institute_id"], "faculty_seq")
+    faculty_id = f"{prefix}{datetime.now().strftime('%Y')}T{seq:03d}"
     doc = body.model_dump()
     doc.update({"id": uid, "email": email, "password_hash": hash_pw(body.password), "role": "teacher",
-                "institute_id": user["institute_id"], "created_at": now_iso()})
+                "faculty_id": faculty_id, "institute_id": user["institute_id"], "created_at": now_iso()})
     doc.pop("password", None)
     await db.users.insert_one(doc)
     return await db.users.find_one({"id": uid}, {"_id": 0, "password_hash": 0})
@@ -685,13 +785,26 @@ async def move_student(sid: str, payload: dict, user=Depends(require("principal"
 async def _mark_student(user, student, batch_id, status="present"):
     d = today_str()
     existing = await db.attendance.find_one({"student_id": student["id"], "date": d})
+
+    async def _maybe_notify(att_id, already):
+        if status == "absent" and not already:
+            phone = student.get("parent_phone") or student.get("phone")
+            if phone:
+                inst = await db.institutes.find_one({"id": user["institute_id"]}) or {}
+                msg = f"Dear Parent, Your ward {student['name']} was marked absent today at {inst.get('name', 'our institute')}. - EduSync"
+                asyncio.create_task(notify_parent_async(phone, msg))
+                await db.attendance.update_one({"id": att_id}, {"$set": {"parent_notified": True}})
+
     if existing:
         await db.attendance.update_one({"id": existing["id"]}, {"$set": {"status": status, "marked_at": now_iso()}})
+        await _maybe_notify(existing["id"], existing.get("parent_notified", False))
         return existing["id"], False
     aid = str(uuid.uuid4())
     await db.attendance.insert_one({"id": aid, "student_id": student["id"], "student_name": student["name"],
                                     "batch_id": batch_id or student.get("batch_id", ""), "date": d, "status": status,
-                                    "institute_id": user["institute_id"], "marked_at": now_iso(), "marked_by": user["id"]})
+                                    "institute_id": user["institute_id"], "marked_at": now_iso(), "marked_by": user["id"],
+                                    "parent_notified": False})
+    await _maybe_notify(aid, False)
     return aid, True
 
 
@@ -871,6 +984,8 @@ async def mark_fee_paid(fee_id: str, user=Depends(require("principal"))):
 async def fee_stats(user=Depends(require("principal"))):
     online = cash = 0.0
     oc = cc = 0
+    this_month = 0.0
+    cur_mo = date.today().strftime("%Y-%m")
     monthly = {}
     for f in await db.fees.find(scope(user), {"_id": 0, "paid_amount": 1, "payment_id": 1, "month": 1}).to_list(10000):
         amt = float(f.get("paid_amount", 0) or 0)
@@ -883,15 +998,20 @@ async def fee_stats(user=Depends(require("principal"))):
             online += amt; oc += 1; m["online"] += amt
         else:
             cash += amt; cc += 1; m["cash"] += amt
+        if mo == cur_mo:
+            this_month += amt
     total = round(online + cash, 2)
     months = sorted(monthly.values(), key=lambda x: x["month"])[-6:]
     for m in months:
         m["online"] = round(m["online"], 2); m["cash"] = round(m["cash"], 2)
+    inst = await db.institutes.find_one({"id": user["institute_id"]}) or {}
+    target = float(inst.get("collection_target", 0) or 0)
     return {"online": round(online, 2), "cash": round(cash, 2), "total": total,
             "online_count": oc, "cash_count": cc,
             "online_pct": round(online / total * 100, 1) if total else 0,
             "cash_pct": round(cash / total * 100, 1) if total else 0,
-            "monthly": months}
+            "monthly": months, "target": target, "this_month": round(this_month, 2),
+            "current_month": cur_mo, "target_pct": round(this_month / target * 100, 1) if target else 0}
 
 
 @api.post("/fees/{fee_id}/reminder")
@@ -961,8 +1081,15 @@ async def enter_results(body: ResultIn, user=Depends(require("principal", "teach
         e["rank"] = i + 1
     if entries:
         await db.results.insert_many(entries)
+    inst = await db.institutes.find_one({"id": user["institute_id"]}) or {}
     for e in entries:
         e.pop("_id", None)
+        s = await db.students.find_one({"id": e["student_id"]}, {"_id": 0, "parent_phone": 1})
+        phone = (s or {}).get("parent_phone")
+        if phone:
+            msg = (f"Dear Parent, result for {e['student_name']} in {exam['name']} ({exam['subject']}): "
+                   f"{e['marks']}/{max_marks} ({e['percentage']}%, Grade {e['grade']}, Rank #{e['rank']}) at {inst.get('name', 'EduSync')}. - EduSync")
+            asyncio.create_task(notify_parent_async(phone, msg))
     return {"ok": True, "results": entries}
 
 
@@ -1001,19 +1128,28 @@ async def create_homework(body: HomeworkIn, user=Depends(require("principal", "t
     doc = body.model_dump()
     doc.update({"id": hid, "institute_id": user["institute_id"], "created_by": user["name"], "created_at": now_iso()})
     await db.homework.insert_one(doc)
+    inst = await db.institutes.find_one({"id": user["institute_id"]}) or {}
+    students = await db.students.find({"batch_id": body.batch_id, "institute_id": user["institute_id"]},
+                                      {"_id": 0, "name": 1, "parent_phone": 1}).to_list(2000)
+    for s in students:
+        if s.get("parent_phone"):
+            msg = (f"Dear Parent, new homework '{body.title}'{(' (' + body.subject + ')') if body.subject else ''} "
+                   f"has been assigned to {s['name']}. Due: {fmt_date(body.deadline)}. - {inst.get('name', 'EduSync')}")
+            asyncio.create_task(notify_parent_async(s["parent_phone"], msg))
     return await db.homework.find_one({"id": hid}, {"_id": 0})
 
 
 @api.post("/homework/submit")
 async def submit_homework(body: SubmissionIn, user=Depends(require("student"))):
+    fields = {"content": body.content or "", "attachment_url": body.attachment_url or "",
+              "attachment_name": body.attachment_name or "", "submitted_at": now_iso(), "status": "submitted"}
     existing = await db.submissions.find_one({"homework_id": body.homework_id, "student_id": user["id"]})
     if existing:
-        await db.submissions.update_one({"id": existing["id"]}, {"$set": {"content": body.content, "submitted_at": now_iso(), "status": "submitted"}})
+        await db.submissions.update_one({"id": existing["id"]}, {"$set": fields})
         return await db.submissions.find_one({"id": existing["id"]}, {"_id": 0})
     sub_id = str(uuid.uuid4())
     await db.submissions.insert_one({"id": sub_id, "homework_id": body.homework_id, "student_id": user["id"],
-                                     "student_name": user["name"], "content": body.content, "status": "submitted",
-                                     "institute_id": user["institute_id"], "submitted_at": now_iso()})
+                                     "student_name": user["name"], "institute_id": user["institute_id"], **fields})
     return await db.submissions.find_one({"id": sub_id}, {"_id": 0})
 
 
@@ -1026,6 +1162,147 @@ async def hw_submissions(hid: str, user=Depends(require("principal", "teacher"))
 async def mark_submission(sub_id: str, user=Depends(require("principal", "teacher"))):
     await db.submissions.update_one({"id": sub_id}, {"$set": {"status": "completed", "reviewed_at": now_iso()}})
     return {"ok": True}
+
+
+# ---------------------------------------------------------------- MCQ online tests
+@api.get("/quizzes")
+async def list_quizzes(user=Depends(get_current_user)):
+    q = scope(user)
+    if user["role"] == "student":
+        s = await db.students.find_one({"id": user["id"]})
+        q["batch_id"] = s.get("batch_id", "")
+    elif user["role"] == "teacher":
+        q["batch_id"] = {"$in": await teacher_batches(user)}
+    quizzes = await db.quizzes.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    for qz in quizzes:
+        qs = qz.get("questions", [])
+        qz["question_count"] = len(qs)
+        qz["total_marks"] = round(len(qs) * float(qz.get("marks_per_correct", 1)), 2)
+        if user["role"] == "student":
+            att = await db.quiz_attempts.find_one({"quiz_id": qz["id"], "student_id": user["id"]}, {"_id": 0})
+            qz["my_attempt"] = {"score": att["score"], "total": att["total"], "percentage": att["percentage"]} if att else None
+            qz.pop("questions", None)
+        else:
+            qz["attempt_count"] = await db.quiz_attempts.count_documents({"quiz_id": qz["id"]})
+    return quizzes
+
+
+@api.get("/quizzes/{qid}")
+async def get_quiz(qid: str, user=Depends(get_current_user)):
+    quiz = await db.quizzes.find_one({"id": qid, "institute_id": user["institute_id"]}, {"_id": 0})
+    if not quiz:
+        raise HTTPException(404, "Quiz not found")
+    if user["role"] == "student":
+        s = await db.students.find_one({"id": user["id"]}, {"_id": 0, "batch_id": 1})
+        if quiz.get("batch_id") != (s or {}).get("batch_id"):
+            raise HTTPException(403, "This test is not assigned to your class")
+        att = await db.quiz_attempts.find_one({"quiz_id": qid, "student_id": user["id"]}, {"_id": 0})
+        if att:
+            quiz["my_attempt"] = att
+        else:
+            for ques in quiz.get("questions", []):
+                ques.pop("correct", None)
+    return quiz
+
+
+@api.post("/quizzes")
+async def create_quiz(body: QuizIn, user=Depends(require("principal", "teacher"))):
+    if not body.questions:
+        raise HTTPException(400, "Add at least one question")
+    qid = str(uuid.uuid4())
+    doc = body.model_dump()
+    doc.update({"id": qid, "institute_id": user["institute_id"], "created_by": user["name"], "created_at": now_iso()})
+    await db.quizzes.insert_one(doc)
+    return await db.quizzes.find_one({"id": qid}, {"_id": 0})
+
+
+@api.delete("/quizzes/{qid}")
+async def delete_quiz(qid: str, user=Depends(require("principal", "teacher"))):
+    await db.quizzes.delete_one({"id": qid, "institute_id": user["institute_id"]})
+    await db.quiz_attempts.delete_many({"quiz_id": qid})
+    return {"ok": True}
+
+
+@api.post("/quizzes/attempt")
+async def attempt_quiz(body: QuizAttemptIn, user=Depends(require("student"))):
+    quiz = await db.quizzes.find_one({"id": body.quiz_id, "institute_id": user["institute_id"]})
+    if not quiz:
+        raise HTTPException(404, "Quiz not found")
+    s = await db.students.find_one({"id": user["id"]}, {"_id": 0, "batch_id": 1})
+    if quiz.get("batch_id") != (s or {}).get("batch_id"):
+        raise HTTPException(403, "This test is not assigned to your class")
+    if await db.quiz_attempts.find_one({"quiz_id": body.quiz_id, "student_id": user["id"]}):
+        raise HTTPException(400, "You have already attempted this test")
+    questions = quiz.get("questions", [])
+    mpc = float(quiz.get("marks_per_correct", 1))
+    neg = float(quiz.get("negative_marks", 0))
+    correct = wrong = unattempted = 0
+    review = []
+    for i, ques in enumerate(questions):
+        sel = body.answers.get(str(i), body.answers.get(i))
+        sel = int(sel) if sel is not None and sel != "" else None
+        is_correct = sel is not None and sel == ques.get("correct")
+        if sel is None:
+            unattempted += 1
+        elif is_correct:
+            correct += 1
+        else:
+            wrong += 1
+        review.append({"text": ques["text"], "options": ques["options"], "correct": ques.get("correct"),
+                       "selected": sel, "is_correct": is_correct})
+    score = round(correct * mpc - wrong * neg, 2)
+    total = round(len(questions) * mpc, 2)
+    pct = round(score / total * 100, 1) if total > 0 else 0
+    attempt = {"id": str(uuid.uuid4()), "quiz_id": body.quiz_id, "quiz_name": quiz["name"],
+               "student_id": user["id"], "student_name": user["name"], "institute_id": user["institute_id"],
+               "score": score, "total": total, "percentage": pct, "correct": correct, "wrong": wrong,
+               "unattempted": unattempted, "review": review, "submitted_at": now_iso()}
+    await db.quiz_attempts.insert_one(attempt)
+    attempt.pop("_id", None)
+    return attempt
+
+
+@api.get("/quizzes/{qid}/results")
+async def quiz_results(qid: str, user=Depends(require("principal", "teacher"))):
+    attempts = await db.quiz_attempts.find({"quiz_id": qid, "institute_id": user["institute_id"]}, {"_id": 0, "review": 0}).sort("score", -1).to_list(2000)
+    if not attempts:
+        return {"attempts": [], "analytics": {"attempts": 0, "avg_percentage": 0, "highest": 0, "lowest": 0, "pass_count": 0}}
+    scores = [a["percentage"] for a in attempts]
+    analytics = {"attempts": len(attempts), "avg_percentage": round(sum(scores) / len(scores), 1),
+                 "highest": max(scores), "lowest": min(scores), "pass_count": sum(1 for s in scores if s >= 40)}
+    return {"attempts": attempts, "analytics": analytics}
+
+
+@api.post("/quizzes/ai-generate")
+async def ai_generate_quiz(body: QuizGenIn, user=Depends(require("principal", "teacher"))):
+    import json as _json
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        chat = LlmChat(api_key=EMERGENT_KEY, session_id=f"quizgen-{uuid.uuid4().hex[:8]}",
+                       system_message="You are an expert exam setter for Indian schools. Respond with ONLY a valid JSON array, no markdown, no commentary.").with_model("gemini", "gemini-3-flash-preview")
+        prompt = (f"Create {min(body.count, 15)} multiple-choice questions on '{body.topic}'"
+                  f"{(' for the subject ' + body.subject) if body.subject else ''}. "
+                  'Return a JSON array where each item is {"text": "question", "options": ["a","b","c","d"], "correct": <0-based index of the correct option>}. '
+                  "Exactly 4 options each. Output only the JSON array.")
+        raw = (await chat.send_message(UserMessage(text=prompt))).strip()
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+        start, end = raw.find("["), raw.rfind("]")
+        if start != -1 and end != -1:
+            raw = raw[start:end + 1]
+        questions = _json.loads(raw)
+        clean = []
+        for q in questions:
+            if isinstance(q.get("options"), list) and len(q["options"]) == 4 and isinstance(q.get("correct"), int):
+                clean.append({"text": str(q["text"]), "options": [str(o) for o in q["options"]], "correct": int(q["correct"]) % 4})
+        if not clean:
+            raise ValueError("No valid questions parsed")
+        return {"questions": clean}
+    except Exception as e:
+        logger.warning(f"AI quiz gen failed: {e}")
+        raise HTTPException(500, "Could not generate questions. Please try again or add them manually.")
 
 
 # ---------------------------------------------------------------- salary
@@ -1047,22 +1324,31 @@ async def create_salary(body: SalaryIn, user=Depends(require("principal"))):
     inst = await db.institutes.find_one({"id": user["institute_id"]}) or {}
     metro = bool(inst.get("metro", False))
     comp = t.get("salary_components") or {}
-    ctc = float(t.get("monthly_salary", 0))
-    if comp.get("base") or comp.get("hra") or comp.get("allowances"):
-        base = float(comp.get("base", 0)); hra = float(comp.get("hra", 0)); special = float(comp.get("allowances", 0))
-        gross = round(base + hra + special, 2); extra_ded = float(comp.get("deductions", 0))
-    else:
-        gross = round(ctc, 2)
-        base = round(gross * 0.45, 2)
-        hra = round(base * (0.5 if metro else 0.4), 2)
-        special = round(gross - base - hra, 2)
-        if special < 0:
-            special = 0.0
-        extra_ded = 0.0
+    gross = float(t.get("monthly_salary") or 0)
+    if gross <= 0:
+        gross = float(comp.get("base", 0)) + float(comp.get("hra", 0)) + float(comp.get("allowances", 0))
+    gross = round(gross, 2)
+    base = round(gross * 0.45, 2)
+    hra = round(base * (0.5 if metro else 0.4), 2)
+    special = round(gross - base - hra, 2)
+    if special < 0:
+        special = 0.0
+    extra_ded = float(comp.get("deductions", 0) or 0)
     epf = round(base * 0.12, 2)
-    pt = 200.0 if gross > 0 else 0.0
-    annual = gross * 12
-    tds = round(gross * 0.10, 2) if annual > 1000000 else (round(gross * 0.05, 2) if annual > 500000 else 0.0)
+    pt = 200.0 if gross >= 15000 else (150.0 if gross >= 10000 else 0.0)
+    annual_gross = gross * 12
+    taxable = max(annual_gross - 50000 - epf * 12, 0)
+    if taxable <= 300000:
+        tax = 0.0
+    elif taxable <= 700000:
+        tax = (taxable - 300000) * 0.05
+    elif taxable <= 1000000:
+        tax = 20000 + (taxable - 700000) * 0.10
+    elif taxable <= 1200000:
+        tax = 50000 + (taxable - 1000000) * 0.15
+    else:
+        tax = 80000 + (taxable - 1200000) * 0.20
+    tds = round(tax / 12, 2)
     y, m = int(body.month[:4]), int(body.month[5:7])
     dim = calendar.monthrange(y, m)[1]
     ms, me = date(y, m, 1), date(y, m, dim)
@@ -1173,6 +1459,40 @@ async def update_complaint(cid: str, body: ComplaintUpdate, user=Depends(require
     return await db.complaints.find_one({"id": cid}, {"_id": 0})
 
 
+# ---------------------------------------------------------------- gallery
+@api.get("/gallery")
+async def list_gallery(user=Depends(get_current_user), class_id: Optional[str] = None):
+    q = scope(user)
+    if class_id:
+        q["class_id"] = class_id
+    return await db.gallery.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
+
+
+@api.post("/gallery")
+async def add_gallery(payload: dict, user=Depends(require("principal", "teacher"))):
+    image_url = (payload.get("image_url") or "").strip()
+    if not image_url:
+        raise HTTPException(400, "A photo is required")
+    gid = str(uuid.uuid4())
+    doc = {"id": gid, "title": (payload.get("title") or "")[:120], "image_url": image_url,
+           "class_id": payload.get("class_id") or "", "class_name": "",
+           "uploaded_by": user["name"], "uploaded_by_role": user["role"], "uploaded_by_id": user["id"],
+           "institute_id": user["institute_id"], "created_at": now_iso()}
+    if doc["class_id"]:
+        b = await db.batches.find_one({"id": doc["class_id"], "institute_id": user["institute_id"]})
+        if not b:
+            raise HTTPException(400, "Invalid class album")
+        doc["class_name"] = b.get("name", "")
+    await db.gallery.insert_one(doc)
+    return await db.gallery.find_one({"id": gid}, {"_id": 0})
+
+
+@api.delete("/gallery/{gid}")
+async def del_gallery(gid: str, user=Depends(require("principal", "teacher"))):
+    await db.gallery.delete_one({"id": gid, "institute_id": user["institute_id"]})
+    return {"ok": True}
+
+
 # ---------------------------------------------------------------- enquiries
 @api.get("/enquiries")
 async def list_enquiries(user=Depends(require("principal", "teacher"))):
@@ -1194,9 +1514,16 @@ async def create_enquiry(body: EnquiryIn, user=Depends(require("principal", "tea
 
 @api.put("/enquiries/{eid}")
 async def update_enquiry(eid: str, body: EnquiryUpdate, user=Depends(require("principal", "teacher"))):
+    enq = await db.enquiries.find_one({"id": eid, "institute_id": user["institute_id"]})
+    if not enq:
+        raise HTTPException(404, "Enquiry not found")
+    if user["role"] == "teacher" and enq.get("assigned_to") != user["id"]:
+        raise HTTPException(403, "This lead is not assigned to you")
     upd = {k: v for k, v in body.model_dump().items() if v is not None}
+    if user["role"] == "teacher":
+        upd = {k: v for k, v in upd.items() if k in ("stage", "status", "notes")}
     if "assigned_to" in upd:
-        t = await db.users.find_one({"id": upd["assigned_to"]})
+        t = await db.users.find_one({"id": upd["assigned_to"], "institute_id": user["institute_id"]})
         upd["assigned_to_name"] = t["name"] if t else ""
     await db.enquiries.update_one({"id": eid, "institute_id": user["institute_id"]}, {"$set": upd})
     return await db.enquiries.find_one({"id": eid}, {"_id": 0})
@@ -1469,6 +1796,25 @@ async def report_card(sid: str, user=Depends(get_current_user)):
             c.showPage(); y = h - 3 * cm
     if not results:
         c.drawString(2 * cm, y, "No exam results recorded yet.")
+    remarks = s.get("remarks") or ""
+    if remarks:
+        y -= 0.9 * cm
+        if y < 4 * cm:
+            c.showPage(); y = h - 3 * cm
+        c.setFont("Helvetica-Bold", 12)
+        c.setFillColor(colors.HexColor("#7C3AED"))
+        c.drawString(2 * cm, y, "Teacher's Remarks")
+        c.setFillColor(colors.HexColor("#0F172A"))
+        y -= 0.3 * cm
+        c.setStrokeColor(colors.HexColor("#10B981")); c.setLineWidth(1.4)
+        c.line(2 * cm, y, w - 2 * cm, y); c.setLineWidth(1)
+        y -= 0.7 * cm
+        c.setFont("Helvetica", 10)
+        import textwrap
+        for line in textwrap.wrap(remarks, 95):
+            c.drawString(2 * cm, y, line); y -= 0.5 * cm
+            if y < 2.5 * cm:
+                c.showPage(); y = h - 3 * cm
     c.setFillColor(colors.HexColor("#64748B"))
     c.setFont("Helvetica-Oblique", 8)
     c.drawString(2 * cm, 1.5 * cm, "Generated by EduSync — Privam Solutions")
@@ -1477,6 +1823,12 @@ async def report_card(sid: str, user=Depends(get_current_user)):
     buf.seek(0)
     return StreamingResponse(buf, media_type="application/pdf",
                              headers={"Content-Disposition": f"inline; filename=report_{s['student_id']}.pdf"})
+
+
+@api.put("/students/{sid}/remarks")
+async def update_remarks(sid: str, payload: dict, user=Depends(require("principal", "teacher"))):
+    await db.students.update_one({"id": sid, "institute_id": user["institute_id"]}, {"$set": {"remarks": payload.get("remarks", "")}})
+    return {"ok": True}
 
 
 @api.get("/salaries/{sid}/slip")
@@ -1582,50 +1934,72 @@ async def principal_dashboard(user=Depends(require("principal"))):
 @api.get("/dashboard/insights")
 async def principal_insights(user=Depends(require("principal"))):
     iid = user["institute_id"]
-    students = await db.students.find({"institute_id": iid}, {"_id": 0, "id": 1, "name": 1, "student_id": 1}).to_list(5000)
-    low = []
+    students = await db.students.find({"institute_id": iid}, {"_id": 0, "id": 1, "name": 1, "student_id": 1, "parent_phone": 1}).to_list(5000)
+
+    att = await db.attendance.find({"institute_id": iid}, {"_id": 0, "student_id": 1, "status": 1}).to_list(200000)
+    att_map = {}
+    for a in att:
+        t, p = att_map.get(a["student_id"], (0, 0))
+        att_map[a["student_id"]] = (t + 1, p + (1 if a["status"] == "present" else 0))
+
+    def att_pct(sid):
+        t, p = att_map.get(sid, (0, 0))
+        return round(p / t * 100, 1) if t else None
+
+    fees = await db.fees.find({"institute_id": iid, "status": {"$ne": "paid"}}, {"_id": 0, "student_id": 1, "due_date": 1, "amount": 1, "paid_amount": 1}).to_list(200000)
+    cutoff = date.today() - timedelta(days=30)
+    overdue_map = {}
+    for f in fees:
+        try:
+            dd = datetime.fromisoformat(str(f.get("due_date", ""))[:10]).date()
+        except Exception:
+            continue
+        if dd < cutoff:
+            due = float(f.get("amount", 0) or 0) - float(f.get("paid_amount", 0) or 0)
+            if due > 0:
+                info = overdue_map.setdefault(f["student_id"], {"amount": 0.0, "oldest": dd})
+                info["amount"] += due
+                info["oldest"] = min(info["oldest"], dd)
+
+    exams = await db.exams.find({"institute_id": iid}, {"_id": 0, "id": 1, "exam_date": 1}).to_list(5000)
+    exdate = {e["id"]: e.get("exam_date", "") for e in exams}
+    results = await db.results.find({"institute_id": iid}, {"_id": 0, "student_id": 1, "exam_id": 1, "percentage": 1}).to_list(200000)
+    res_by_student = {}
+    for r in results:
+        res_by_student.setdefault(r["student_id"], []).append((exdate.get(r["exam_id"], ""), r["percentage"]))
+    avg_map = {sid: (sum(p for _, p in lst) / len(lst)) for sid, lst in res_by_student.items() if lst}
+    sorted_avgs = sorted(avg_map.values(), reverse=True)
+    threshold = sorted_avgs[max(1, int(len(sorted_avgs) * 0.10)) - 1] if sorted_avgs else None
+
+    def declining(sid):
+        vals = [p for _, p in sorted(res_by_student.get(sid, []), key=lambda x: x[0])]
+        if len(vals) < 3:
+            return None
+        a, b, c = vals[-3], vals[-2], vals[-1]
+        return vals[-3:] if (c < b < a) else None
+
+    red, orange, yellow, green = [], [], [], []
     for s in students:
-        total = await db.attendance.count_documents({"student_id": s["id"]})
-        if total == 0:
-            continue
-        present = await db.attendance.count_documents({"student_id": s["id"], "status": "present"})
-        pct = round(present / total * 100, 1)
-        if pct < 75:
-            low.append({"name": s["name"], "student_id": s.get("student_id", ""), "pct": pct})
-    low.sort(key=lambda x: x["pct"])
-
-    pend = await db.leaves.find({"institute_id": iid, "status": "pending"}, {"_id": 0}).sort("created_at", -1).to_list(200)
-    pending_list = [{"teacher_name": l.get("teacher_name", ""), "from_date": l.get("from_date"),
-                     "to_date": l.get("to_date"), "reason": l.get("reason", "")} for l in pend]
-
-    tt = await db.timetable.find({"institute_id": iid}, {"_id": 0}).to_list(5000)
-    seen = {}
-    conflicts = []
-    for e in tt:
-        tid = e.get("teacher_id")
-        if not tid:
-            continue
-        key = (e.get("day"), e.get("slot"), tid)
-        if key in seen:
-            conflicts.append({"teacher_name": e.get("teacher_name", ""), "day": e.get("day"), "slot": e.get("slot"),
-                              "batches": f'{seen[key]} & {e.get("batch_name", "")}'})
-        else:
-            seen[key] = e.get("batch_name", "")
-
-    last7 = [(date.today() - timedelta(days=i)).isoformat() for i in range(0, 7)]
-    prev7 = [(date.today() - timedelta(days=i)).isoformat() for i in range(7, 14)]
-    cur = await db.attendance.count_documents({"institute_id": iid, "status": "present", "date": {"$in": last7}})
-    prevc = await db.attendance.count_documents({"institute_id": iid, "status": "present", "date": {"$in": prev7}})
-    if prevc > 0:
-        improvement = round((cur - prevc) / prevc * 100, 1)
-    else:
-        improvement = 100.0 if cur > 0 else 0.0
+        sid = s["id"]
+        base = {"name": s["name"], "student_id": s.get("student_id", ""), "parent_phone": s.get("parent_phone", "")}
+        ap = att_pct(sid)
+        if ap is not None and ap < 75:
+            red.append({**base, "detail": f"{ap}% attendance"})
+        if sid in overdue_map:
+            info = overdue_map[sid]
+            days = (date.today() - info["oldest"]).days
+            orange.append({**base, "detail": f"₹{int(info['amount'])} overdue · {days} days"})
+        dv = declining(sid)
+        if dv:
+            yellow.append({**base, "detail": " → ".join(f"{v}%" for v in dv)})
+        if ap is not None and ap > 90 and threshold is not None and avg_map.get(sid, 0) >= threshold and avg_map.get(sid, 0) > 0:
+            green.append({**base, "detail": f"{round(avg_map[sid], 1)}% avg · {ap}% att"})
 
     return {
-        "low_attendance": {"count": len(low), "students": low[:10]},
-        "pending_approvals": {"count": len(pending_list), "items": pending_list[:10]},
-        "timetable_conflicts": {"count": len(conflicts), "items": conflicts[:10]},
-        "attendance_improvement": {"value": improvement, "current": cur, "previous": prevc},
+        "red": {"label": "Low Attendance (<75%)", "count": len(red), "students": red},
+        "orange": {"label": "Fee Overdue (>30 days)", "count": len(orange), "students": orange},
+        "yellow": {"label": "Declining Performance", "count": len(yellow), "students": yellow},
+        "green": {"label": "Top Performers", "count": len(green), "students": green},
     }
 
 
@@ -1688,6 +2062,28 @@ async def ai_report_summary(body: AIReq, user=Depends(require("principal", "teac
     except Exception as e:
         logger.warning(f"AI failed: {e}")
         return {"summary": f"{s['name']} has an attendance of {att}%. Academic performance: {res_text}. Consistent effort and regular practice are recommended to improve further."}
+
+
+@api.get("/student/ai-summary")
+async def student_ai_summary(user=Depends(require("student"))):
+    sid = user["id"]
+    total = await db.attendance.count_documents({"student_id": sid})
+    present = await db.attendance.count_documents({"student_id": sid, "status": "present"})
+    att = round(present / total * 100, 1) if total else 0
+    results = await db.results.find({"student_id": sid}, {"_id": 0}).to_list(500)
+    res_text = "; ".join(f"{r['subject']}: {r['percentage']}%" for r in results) or "No results yet"
+    avg = round(sum(r["percentage"] for r in results) / len(results), 1) if results else 0
+    pending = await db.fees.find({"student_id": sid, "status": {"$ne": "paid"}}, {"_id": 0, "amount": 1, "paid_amount": 1}).to_list(500)
+    due = round(sum(float(f.get("amount", 0) or 0) - float(f.get("paid_amount", 0) or 0) for f in pending), 2)
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        chat = LlmChat(api_key=EMERGENT_KEY, session_id=f"stu-{sid}",
+                       system_message="You are a supportive academic mentor. Write a warm, motivating 3-4 sentence performance summary addressed directly to the student ('you'). Mention a strength, one area to improve, and one practical tip. No markdown.").with_model("gemini", "gemini-3-flash-preview")
+        summary = await chat.send_message(UserMessage(text=f"Attendance: {att}%. Results: {res_text}. Pending fees: Rs.{int(due)}. Write the summary."))
+    except Exception as e:
+        logger.warning(f"AI failed: {e}")
+        summary = f"Your attendance is {att}% and your average score is {avg}%. Keep attending regularly and revising consistently — steady practice will lift your results."
+    return {"attendance_pct": att, "avg_percentage": avg, "pending_fees": due, "summary": summary}
 
 
 @api.post("/ai/timetable-suggest")
@@ -1855,8 +2251,8 @@ async def _send_overdue(institute_id=None):
     for fee in await db.fees.find(q).to_list(5000):
         inst = await db.institutes.find_one({"id": fee["institute_id"]})
         remaining = round(float(fee["amount"]) - float(fee.get("paid_amount", 0)), 2)
-        msg = f"Dear Parent, fee of Rs.{remaining} for {fee.get('student_name')} ({fee.get('month')}) is OVERDUE (due {fee.get('due_date')}). Please pay at the earliest. - {inst['name'] if inst else 'EduSync'}"
-        if send_sms(fee.get("parent_phone"), msg):
+        msg = f"Dear Parent, fee of Rs.{remaining} for {fee.get('student_name')} ({fee.get('month')}) is OVERDUE (due {fmt_date(fee.get('due_date'))}). Please pay at the earliest. - {inst['name'] if inst else 'EduSync'}"
+        if notify_parent(fee.get("parent_phone"), msg):
             sent += 1
         await db.fees.update_one({"id": fee["id"]}, {"$set": {"last_reminder": now_iso()}})
         await db.notifications.insert_one({"id": str(uuid.uuid4()), "institute_id": fee["institute_id"],
@@ -1890,8 +2286,14 @@ async def get_institute(user=Depends(get_current_user)):
 
 @api.put("/institute")
 async def update_institute(payload: dict, user=Depends(require("principal"))):
-    allowed = {"name", "address", "phone", "email", "logo_url", "logo_path", "id_template", "upi_id", "metro"}
+    allowed = {"name", "address", "phone", "email", "logo_url", "logo_path", "id_template", "upi_id", "metro", "collection_target", "code"}
     upd = {k: v for k, v in payload.items() if k in allowed and v is not None}
+    if "code" in upd:
+        clean = "".join(c for c in str(upd["code"]) if c.isalnum()).upper()[:4]
+        if clean:
+            upd["code"] = clean
+        else:
+            upd.pop("code")
     await db.institutes.update_one({"id": user["institute_id"]}, {"$set": upd})
     return await db.institutes.find_one({"id": user["institute_id"]}, {"_id": 0})
 
@@ -2050,6 +2452,27 @@ app.add_middleware(CORSMiddleware, allow_credentials=False,
                    allow_methods=["*"], allow_headers=["*"])
 
 
+async def migrate_ids():
+    """Standardize student IDs to <CODE><YEAR><4-digit> and faculty IDs to <CODE><YEAR>T<3-digit>."""
+    year = datetime.now().strftime("%Y")
+    async for inst in db.institutes.find({}):
+        iid = inst["id"]
+        code = (inst.get("code") or inst_prefix(inst)).upper()[:4]
+        s_seq = inst.get("student_seq", 0) or 0
+        students = await db.students.find({"institute_id": iid}).sort("created_at", 1).to_list(10000)
+        for s in students:
+            if not (s.get("student_id") or "").startswith(f"{code}{year}"):
+                s_seq += 1
+                await db.students.update_one({"id": s["id"]}, {"$set": {"student_id": f"{code}{year}{s_seq:04d}"}})
+        f_seq = inst.get("faculty_seq", 0) or 0
+        teachers = await db.users.find({"institute_id": iid, "role": "teacher"}).sort("created_at", 1).to_list(5000)
+        for t in teachers:
+            if not (t.get("faculty_id") or "").startswith(f"{code}{year}T"):
+                f_seq += 1
+                await db.users.update_one({"id": t["id"]}, {"$set": {"faculty_id": f"{code}{year}T{f_seq:03d}"}})
+        await db.institutes.update_one({"id": iid}, {"$set": {"code": code, "student_seq": s_seq, "faculty_seq": f_seq}})
+
+
 @app.on_event("startup")
 async def startup():
     try:
@@ -2061,6 +2484,10 @@ async def startup():
         await seed()
     except Exception as e:
         logger.error(f"Seed failed: {e}")
+    try:
+        await migrate_ids()
+    except Exception as e:
+        logger.error(f"ID migration failed: {e}")
 
 
 @app.on_event("shutdown")

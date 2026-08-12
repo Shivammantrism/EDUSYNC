@@ -17,6 +17,7 @@ export const MODULE_ACCENTS = {
   timetable: mk(PURPLE, "124,58,237"),
   fees: mk(EMERALD, "5,150,105"),
   exams: mk(PURPLE2, "139,92,246"),
+  quizzes: mk(PURPLE, "124,58,237"),
   homework: mk(NAVY2, "30,64,175"),
   salary: mk(EMERALD, "5,150,105"),
   leaves: mk(NAVY, "30,58,138"),
