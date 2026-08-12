@@ -136,6 +136,11 @@ All use `notify_parent_async` (WhatsApp-first via TWILIO_WHATSAPP_FROM → SMS f
 - **Fee reminder** now uses `notify_parent` (WhatsApp→SMS) and returns an honest status: "sent via WHATSAPP/SMS", "No parent phone on file", or "Could not deliver — SMS provider rejected the number (trial accounts only send to verified numbers)". Replaces the misleading "check parent phone" message.
 - NOTE (reported issues): SMS not delivering + receipt not emailed are DATA/ACCOUNT limits, not bugs — trial Twilio account (error 21608) can't message unverified numbers, and demo students had no email on file (student form now captures parent/student email).
 
+## Implemented (2026-06, forked session, part 7) — Data export, inline phone, password reset
+- **CSV exports on Principal dashboard**: "Students" and "Teachers" buttons download full CSVs via GET /export/students.csv and /export/teachers.csv (principal only). Verified.
+- **Inline parent-phone fix**: when a fee reminder can't be delivered, the row prompts to add/fix the parent's phone (PUT /students/{id}) and auto-retries the reminder. Verified path.
+- **Password reset**: student & teacher edit dialogs include a password field (blank = unchanged on edit); PUT /students/{id} and /teachers/{id} accept `password` → re-hash. Verified: reset then logged in with the new password.
+
 ## Verification status (forked session)
 - Backend curl-verified: ID migration/continuation, quiz create/attempt scoring w/ negative marking, batch-auth 403, insights buckets (red=3/orange=15), auto-absent dedup flag, student AI summary, student report PDF, homework/exam notify hooks present.
 - Frontend compiles clean (only pre-existing html5-qrcode source-map + react-hooks/exhaustive-deps warnings).

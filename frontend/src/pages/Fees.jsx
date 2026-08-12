@@ -68,7 +68,16 @@ export default function Fees() {
     try { const { data } = await api.post(`/fees/${partial.id}/pay-partial`, { amount: Number(partialAmt) }); toast.success(`Recorded · balance ${money(data.remaining)}`); setPartial(null); setPartialAmt(""); load(); }
     catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
   };
-  const remind = async (id) => { const { data } = await api.post(`/fees/${id}/reminder`); (data.sms_sent ? toast.success : toast.info)(data.message); };
+  const remind = async (f) => {
+    const { data } = await api.post(`/fees/${f.id}/reminder`);
+    if (data.sms_sent) { toast.success(data.message); return; }
+    toast.info(data.message);
+    const np = window.prompt("Add or fix the parent phone (include country code, e.g. +9198...):", "");
+    if (np && np.trim()) {
+      try { await api.put(`/students/${f.student_id}`, { parent_phone: np.trim() }); const r2 = await api.post(`/fees/${f.id}/reminder`); (r2.data.sms_sent ? toast.success : toast.info)(r2.data.message); load(); }
+      catch (e) { toast.error("Could not update phone"); }
+    }
+  };
   const remindAll = async () => { const { data } = await api.post("/fees/send-overdue-reminders"); toast.success(data.message); };
   const emailReceipt = async (id) => { try { const { data } = await api.post(`/fees/${id}/email-receipt`); toast.success(`Receipt emailed to ${data.to}`); } catch (e) { toast.error(formatErr(e.response?.data?.detail)); } };
 
@@ -240,7 +249,7 @@ export default function Fees() {
                     <div className="flex justify-end gap-1.5 flex-wrap">
                       {f.status !== "paid" && (isPrincipal ? (
                         <>
-                          <Button data-testid={`remind-${f.id}`} size="sm" variant="outline" onClick={() => remind(f.id)}><Bell className="h-3.5 w-3.5" /></Button>
+                          <Button data-testid={`remind-${f.id}`} size="sm" variant="outline" onClick={() => remind(f)}><Bell className="h-3.5 w-3.5" /></Button>
                           <Button data-testid={`partial-${f.id}`} size="sm" variant="outline" onClick={() => setPartial(f)}>Partial</Button>
                           <Button data-testid={`markpaid-${f.id}`} size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => markPaid(f.id)}><CheckCircle2 className="h-3.5 w-3.5" /></Button>
                         </>

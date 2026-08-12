@@ -6,6 +6,8 @@ load_dotenv(ROOT_DIR / '.env')
 
 import os
 import base64
+import csv
+import io
 import uuid
 import logging
 import hmac
@@ -656,7 +658,31 @@ async def update_student(sid: str, payload: dict, user=Depends(require("principa
     r = await db.students.update_one({"id": sid, "institute_id": user["institute_id"]}, {"$set": upd})
     if r.matched_count == 0:
         raise HTTPException(404, "Student not found")
+    if payload.get("password"):
+        await db.students.update_one({"id": sid, "institute_id": user["institute_id"]}, {"$set": {"password_hash": hash_pw(payload["password"])}})
     return await db.students.find_one({"id": sid}, {"_id": 0, "password_hash": 0})
+
+
+@api.get("/export/students.csv")
+async def export_students_csv(user=Depends(require("principal"))):
+    rows = await db.students.find({"institute_id": user["institute_id"]}, {"_id": 0, "password_hash": 0}).sort("student_id", 1).to_list(10000)
+    batches = {b["id"]: b.get("name", "") for b in await db.batches.find({"institute_id": user["institute_id"]}, {"_id": 0, "id": 1, "name": 1}).to_list(2000)}
+    buf = io.StringIO(); w = csv.writer(buf)
+    w.writerow(["Student ID", "Name", "Age", "Gender", "Class", "Parent Name", "Parent Phone", "Parent Email", "Monthly Fee", "Joined"])
+    for s in rows:
+        w.writerow([s.get("student_id", ""), s.get("name", ""), s.get("age", ""), s.get("gender", ""), batches.get(s.get("batch_id"), ""),
+                    s.get("parent_name", ""), s.get("parent_phone", ""), s.get("parent_email", ""), s.get("monthly_fee", ""), s.get("join_month", "")])
+    return Response(content=buf.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=students.csv"})
+
+
+@api.get("/export/teachers.csv")
+async def export_teachers_csv(user=Depends(require("principal"))):
+    rows = await db.users.find({"institute_id": user["institute_id"], "role": "teacher"}, {"_id": 0, "password_hash": 0}).sort("faculty_id", 1).to_list(10000)
+    buf = io.StringIO(); w = csv.writer(buf)
+    w.writerow(["Faculty ID", "Name", "Email", "Phone", "Subjects", "Monthly Salary", "Leave Balance"])
+    for t in rows:
+        w.writerow([t.get("faculty_id", ""), t.get("name", ""), t.get("email", ""), t.get("phone", ""), ", ".join(t.get("subjects", []) or []), t.get("monthly_salary", ""), t.get("leave_balance", 12)])
+    return Response(content=buf.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=teachers.csv"})
 
 
 @api.get("/students/{sid}")
@@ -744,6 +770,8 @@ async def update_teacher(tid: str, payload: dict, user=Depends(require("principa
     r = await db.users.update_one({"id": tid, "institute_id": user["institute_id"], "role": "teacher"}, {"$set": upd})
     if r.matched_count == 0:
         raise HTTPException(404, "Teacher not found")
+    if payload.get("password"):
+        await db.users.update_one({"id": tid, "institute_id": user["institute_id"]}, {"$set": {"password_hash": hash_pw(payload["password"])}})
     return await db.users.find_one({"id": tid}, {"_id": 0, "password_hash": 0})
 
 

@@ -108,6 +108,7 @@ export default function Students() {
                   </div>
                 </div>
                 <p className="text-xs text-slate-400">Default login password: <span className="font-mono">student123</span></p>
+                <div><Label>Login Password {editId && <span className="text-xs font-normal text-slate-400">(blank = keep unchanged)</span>}</Label><Input data-testid="student-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={editId ? "New password" : "student123"} /></div>
               </div>
               <DialogFooter><Button data-testid="save-student-btn" onClick={save} disabled={saving || !form.name} className="btn-gradient">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : (editId ? "Save Changes" : "Register")}</Button></DialogFooter>
             </DialogContent>

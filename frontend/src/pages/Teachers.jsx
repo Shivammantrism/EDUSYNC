@@ -28,7 +28,7 @@ export default function Teachers() {
   const save = async () => {
     const payload = { name: form.name, email: form.email, phone: form.phone, monthly_salary: Number(form.monthly_salary), subjects: form.subjects.split(",").map((s) => s.trim()).filter(Boolean), available_days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"], leave_balance: Number(form.leave_balance ?? 12) };
     try {
-      if (editId) { await api.put(`/teachers/${editId}`, payload); toast.success("Teacher updated"); }
+      if (editId) { await api.put(`/teachers/${editId}`, { ...payload, ...(form.password ? { password: form.password } : {}) }); toast.success("Teacher updated"); }
       else { await api.post("/teachers", { ...payload, password: form.password }); toast.success("Teacher added"); }
       setOpen(false); reset(); load();
     } catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
@@ -47,7 +47,7 @@ export default function Teachers() {
             <div className="space-y-3">
               <div><Label>Name</Label><Input data-testid="teacher-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
               <div><Label>Email</Label><Input data-testid="teacher-email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
-              {!editId && <div><Label>Password</Label><Input data-testid="teacher-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></div>}
+              <div><Label>{editId ? "New Password" : "Password"} {editId && <span className="text-xs font-normal text-slate-400">(blank = unchanged)</span>}</Label><Input data-testid="teacher-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={editId ? "leave blank to keep" : ""} /></div>
               <div className="grid grid-cols-2 gap-3">
                 <div><Label>Phone</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
                 <div><Label>Monthly Salary (₹)</Label><Input type="number" value={form.monthly_salary} onChange={(e) => setForm({ ...form, monthly_salary: e.target.value })} /></div>

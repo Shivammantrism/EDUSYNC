@@ -181,12 +181,16 @@ function PrincipalDash() {
   return (
     <div>
       <PageHeader title="Principal Dashboard" subtitle="Live overview of your institute" actions={
-        institute?.code ? (
-          <div data-testid="institute-code-badge" className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 shadow-sm">
-            <span className="text-[11px] uppercase tracking-wide text-slate-400 font-semibold">Institute Code</span>
-            <span className="font-mono text-lg font-extrabold text-violet-600">{institute.code}</span>
-          </div>
-        ) : null
+        <div className="flex items-center gap-2">
+          <Button data-testid="export-students-btn" size="sm" variant="outline" onClick={() => downloadCsv("/export/students.csv", "students.csv")}><Download className="h-4 w-4 mr-1" />Students</Button>
+          <Button data-testid="export-teachers-btn" size="sm" variant="outline" onClick={() => downloadCsv("/export/teachers.csv", "teachers.csv")}><Download className="h-4 w-4 mr-1" />Teachers</Button>
+          {institute?.code && (
+            <div data-testid="institute-code-badge" className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 shadow-sm">
+              <span className="text-[11px] uppercase tracking-wide text-slate-400 font-semibold">Code</span>
+              <span className="font-mono text-lg font-extrabold text-violet-600">{institute.code}</span>
+            </div>
+          )}
+        </div>
       } />
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5 mb-6">
         <StatCard testid="kpi-total-students" label="Enrolled Students" value={k.total_students} sub={`+${k.monthly_joiners} this month`} icon={Users} accent="#1e3a8a" delay={0} />
