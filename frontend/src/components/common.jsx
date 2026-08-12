@@ -91,7 +91,7 @@ const statusMap = {
   paid: ["#16a34a", "rgba(22,163,74,0.12)"], pending: ["#d97706", "rgba(217,119,6,0.12)"],
   partial: ["#ea580c", "rgba(234,88,12,0.12)"],
   present: ["#16a34a", "rgba(22,163,74,0.12)"], absent: ["#dc2626", "rgba(220,38,38,0.12)"],
-  open: ["#d97706", "rgba(217,119,6,0.12)"], in_progress: ["#2563eb", "rgba(37,99,235,0.12)"],
+  open: ["#d97706", "rgba(217,119,6,0.12)"], in_progress: ["#2563eb", "rgba(37,99,235,0.12)"], under_review: ["#2563eb", "rgba(37,99,235,0.12)"],
   resolved: ["#16a34a", "rgba(22,163,74,0.12)"], approved: ["#16a34a", "rgba(22,163,74,0.12)"],
   rejected: ["#dc2626", "rgba(220,38,38,0.12)"], submitted: ["#2563eb", "rgba(37,99,235,0.12)"],
   completed: ["#16a34a", "rgba(22,163,74,0.12)"], new: ["#2563eb", "rgba(37,99,235,0.12)"],

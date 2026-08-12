@@ -64,6 +64,16 @@ Multi-institute management SaaS with two connected portals sharing one database.
 - **Announcements**: principals AND teachers can post with optional PDF attachment; students view/download PDF; teachers delete only own. Verified via curl.
 - PDF watermark (report cards/receipts/salary), premium tri-color theme (navy/emerald/purple), master ID template + live preview, Class/Sections, complaint routing+PDF+status, teacher assigned leads.
 
+## Implemented (2026-06) — Message-161 features + premium theme
+- **Financial**: itemized fee receipts with partial/balance, payment date, branded letterhead + embedded UPI payment QR (institute upi_id); Indian legal salary slips (Basic ~45% CTC, HRA 40/50% metro, Special balancing, EPF 12%, Professional Tax, TDS, auto net) as branded PDF; Razorpay UPI/card test-mode confirmed (order+HMAC verify).
+- **Complaints**: role-based routing (teacher→Principal/Parent/Both, student→Teacher/Principal/Both) with per-student directed-teacher scoping (no cross-teacher leak), PDF+image attachments, status tags Pending/Under Review/Resolved (validated), full audit trail (who/when/note).
+- **Timetable**: fixed 0-slot bug (was a backend syntax crash); AI conflict-free generator (days/periods/teachers config), PDF download, grid derives configured days/slots and stacks multiple batches per cell.
+- **Students/Batches**: class-section assignment at admission; principal views batch roster, moves students between batches, sees batch strength; teachers auto-see their batch students.
+- **Dashboard AI Insights** (live, 30s refresh): low attendance <75% (red), pending leave approvals (orange), timetable conflicts (yellow), attendance improvement % (green).
+- **Legal**: Privacy Policy + Terms pages (DPDP Act, parental consent, RBAC, retention) linked from login footer.
+- Login split-layout redesign, premium tri-color theme, PDF watermark, master ID template + live preview.
+- NOTE: Auth intentionally uses JWT Bearer + localStorage (not HttpOnly cookie) and CORS allow_credentials=False by design — testing-agent flagged these as playbook deviations, retained per product design.
+
 ## Backlog / Remaining (P2)
 - Add DialogDescription/aria-describedby to dialogs (LOW — console accessibility warning only).
 - Add error/catch states to page load effects (avoid indefinite loaders on API failure).

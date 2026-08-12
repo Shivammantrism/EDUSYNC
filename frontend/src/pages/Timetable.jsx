@@ -59,8 +59,12 @@ export default function Timetable() {
   };
 
   if (!tt) return <Loader />;
+  const days = DAYS.filter((d) => tt.some((e) => e.day === d));
+  const gridDays = days.length ? days : DAYS.slice(0, 5);
+  const usedSlots = [...new Set(tt.map((e) => e.slot))].sort();
+  const gridSlots = usedSlots.length ? usedSlots : SLOTS;
   const grid = {};
-  tt.forEach((e) => { grid[e.day] = grid[e.day] || {}; grid[e.day][e.slot] = e; });
+  tt.forEach((e) => { (grid[e.day] = grid[e.day] || {}); (grid[e.day][e.slot] = grid[e.day][e.slot] || []).push(e); });
 
   return (
     <div>
@@ -140,19 +144,25 @@ export default function Timetable() {
           <table className="w-full text-sm min-w-[720px]">
             <thead><tr className="border-b border-slate-200 bg-slate-50">
               <th className="p-3 text-left font-semibold text-slate-500 w-28">Time</th>
-              {DAYS.map((d) => <th key={d} className="p-3 text-left font-semibold text-slate-600">{d}</th>)}
+              {gridDays.map((d) => <th key={d} className="p-3 text-left font-semibold text-slate-600">{d}</th>)}
             </tr></thead>
             <tbody>
-              {SLOTS.map((slot) => (
+              {gridSlots.map((slot) => (
                 <tr key={slot} className="border-b border-slate-100">
                   <td className="p-3 text-xs font-medium text-slate-400">{slot}</td>
-                  {DAYS.map((d) => {
-                    const e = grid[d]?.[slot];
-                    return <td key={d} className="p-2">
-                      {e ? <div className="rounded-lg bg-blue-50 border border-blue-100 p-2">
-                        <p className="font-semibold text-blue-800 text-xs">{e.subject || e.batch_name}</p>
-                        <p className="text-[11px] text-slate-500">{e.batch_name} · {e.teacher_name}</p>
-                      </div> : <div className="text-slate-200 text-center">—</div>}
+                  {gridDays.map((d) => {
+                    const list = grid[d]?.[slot] || [];
+                    return <td key={d} className="p-2 align-top">
+                      {list.length ? (
+                        <div className="space-y-1.5">
+                          {list.map((e) => (
+                            <div key={e.id} className="rounded-lg bg-blue-50 border border-blue-100 p-2">
+                              <p className="font-semibold text-blue-800 text-xs">{e.subject || e.batch_name}</p>
+                              <p className="text-[11px] text-slate-500">{e.batch_name} · {e.teacher_name}</p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : <div className="text-slate-200 text-center">—</div>}
                     </td>;
                   })}
                 </tr>

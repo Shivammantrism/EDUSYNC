@@ -6,7 +6,51 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area,
 } from "recharts";
-import { Users, CalendarCheck, Wallet, UserCheck, MessageSquareWarning, BookOpen, Award, TrendingUp, Phone, GraduationCap } from "lucide-react";
+import { Users, CalendarCheck, Wallet, UserCheck, MessageSquareWarning, BookOpen, Award, TrendingUp, Phone, GraduationCap, AlertTriangle, Clock, CalendarX, Sparkles } from "lucide-react";
+
+function InsightsPanel() {
+  const [ins, setIns] = useState(null);
+  useEffect(() => {
+    const go = () => api.get("/dashboard/insights").then((r) => setIns(r.data)).catch(() => {});
+    go();
+    const t = setInterval(go, 30000);
+    return () => clearInterval(t);
+  }, []);
+  if (!ins) return null;
+  const v = ins.attendance_improvement?.value ?? 0;
+  const cards = [
+    { key: "low", tone: "red", icon: AlertTriangle, title: "Low Attendance (<75%)", value: ins.low_attendance.count,
+      desc: ins.low_attendance.count ? ins.low_attendance.students.slice(0, 3).map((s) => `${s.name} (${s.pct}%)`).join(", ") + (ins.low_attendance.count > 3 ? "…" : "") : "All students above 75%", testid: "insight-low-attendance" },
+    { key: "pend", tone: "orange", icon: Clock, title: "Pending Leave Approvals", value: ins.pending_approvals.count,
+      desc: ins.pending_approvals.count ? ins.pending_approvals.items.slice(0, 3).map((i) => i.teacher_name).join(", ") : "No pending approvals", testid: "insight-pending-approvals" },
+    { key: "conf", tone: "yellow", icon: CalendarX, title: "Timetable Conflicts", value: ins.timetable_conflicts.count,
+      desc: ins.timetable_conflicts.count ? ins.timetable_conflicts.items.slice(0, 2).map((i) => `${i.teacher_name} · ${i.day} ${i.slot}`).join("; ") : "No scheduling clashes", testid: "insight-timetable-conflicts" },
+    { key: "trend", tone: "green", icon: TrendingUp, title: "Attendance Trend (7d)", value: `${v > 0 ? "+" : ""}${v}%`,
+      desc: v >= 0 ? "Improved vs last week" : "Down vs last week", testid: "insight-attendance-trend" },
+  ];
+  const tones = { red: "bg-red-50 border-red-200 text-red-700", orange: "bg-orange-50 border-orange-200 text-orange-700", yellow: "bg-amber-50 border-amber-200 text-amber-700", green: "bg-emerald-50 border-emerald-200 text-emerald-700" };
+  const it = { red: "bg-red-100 text-red-600", orange: "bg-orange-100 text-orange-600", yellow: "bg-amber-100 text-amber-600", green: "bg-emerald-100 text-emerald-600" };
+  return (
+    <div data-testid="ai-insights-panel" className="rounded-2xl border border-slate-200 bg-white p-6 mb-6 stat-card">
+      <div className="flex items-center gap-2 mb-4">
+        <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-violet-500 to-blue-500 grid place-items-center"><Sparkles className="h-4 w-4 text-white" /></div>
+        <h3 className="font-semibold text-slate-800 font-heading">AI Insights <span className="text-xs font-normal text-slate-400 ml-1">· live</span></h3>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {cards.map((c) => (
+          <div key={c.key} data-testid={c.testid} className={`rounded-xl border p-4 ${tones[c.tone]}`}>
+            <div className="flex items-center justify-between">
+              <div className={`h-9 w-9 rounded-lg grid place-items-center ${it[c.tone]}`}><c.icon className="h-4 w-4" /></div>
+              <span className="text-2xl font-extrabold">{c.value}</span>
+            </div>
+            <p className="font-semibold text-sm mt-2">{c.title}</p>
+            <p className="text-xs opacity-80 mt-1 line-clamp-2">{c.desc}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -39,6 +83,8 @@ function PrincipalDash() {
         <StatCard testid="kpi-teachers" label="Teachers Present" value={`${k.teachers_present}/${k.total_teachers}`} sub="active today" icon={UserCheck} accent="#1e40af" delay={210} />
         <StatCard testid="kpi-complaints" label="Open Complaints" value={k.open_complaints} sub="need attention" icon={MessageSquareWarning} accent="#8b5cf6" delay={280} />
       </div>
+
+      <InsightsPanel />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         <ChartCard title="Monthly Fee Collection" className="lg:col-span-2">

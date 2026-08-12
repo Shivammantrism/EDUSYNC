@@ -1,0 +1,100 @@
+{
+  "summary": "Tested requested backend and end-to-end flows against the public preview. Core timetable generation/PDF, admission/batch roster/move, teacher student scope, finance PDFs, default Indian salary calculation, Razorpay test orders, complaint attachment/audit UI, legal pages, and all three role logins worked. Blocking gaps remain in the Principal AI Insights UI, complaint routing/privacy and status validation, timetable all-batches rendering, and required cookie/CORS auth controls.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "/api/complaints",
+        "issue": "A student complaint routed to 'both' is returned to every teacher in the institute, not only the student's assigned/class teacher. Reproduced with teacher2 reading a complaint for teacher1's batch.",
+        "priority": "HIGH"
+      },
+      {
+        "endpoint": "/api/complaints/{id}",
+        "issue": "Status is not validated: PUT with status='deleted' returns 200, persists it, and appends it to the audit trail although only pending/under_review/resolved are allowed.",
+        "priority": "HIGH"
+      },
+      {
+        "endpoint": "/api/auth/login",
+        "issue": "Successful login does not set an application access_token HttpOnly cookie; the only Set-Cookie observed is the edge-provider __cf_bm cookie.",
+        "priority": "HIGH"
+      },
+      {
+        "endpoint": "CORS middleware",
+        "issue": "Credentialed CORS playbook requirement fails: allow_credentials is false and no explicit credentialed origin is returned.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "/api/salaries",
+        "issue": "The statutory 45%-Basic and 40/50%-of-Basic HRA calculation is bypassed when salary_components exist. Anita's generated salary used Basic 30000/HRA 8000 rather than the requested legal auto-breakdown; default, unconfigured teachers calculate correctly."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Principal Dashboard",
+        "issue": "The required AI Insights panel is entirely absent; data-testid='ai-insights-panel' is not rendered and Dashboard.jsx never calls /dashboard/insights.",
+        "selector": "[data-testid='ai-insights-panel']",
+        "priority": "HIGH"
+      },
+      {
+        "component": "Timetable grid",
+        "issue": "The grid hardcodes all six DAYS and six SLOTS instead of the configured generation days/periods. A five-day generation still displayed an empty Saturday column.",
+        "selector": "table",
+        "priority": "MEDIUM"
+      },
+      {
+        "component": "Radix dialogs",
+        "issue": "Opening timetable, student, batch, and complaint dialogs repeatedly logs missing DialogDescription/aria-describedby accessibility warnings.",
+        "selector": "[role='dialog']",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Timetable All Batches view",
+        "issue": "Generation returned 120 persisted slots, but the default All Batches grid indexes entries only by day+slot, so entries from different batches overwrite one another and only one batch is shown per cell. Users must manually filter each batch to see omitted schedules.",
+        "affected_selectors": ["[data-testid='tt-batch-filter']", "table tbody"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration6_requested.py",
+    "/app/test_reports/pytest/pytest_iteration6_requested.xml"
+  ],
+  "action_items": [
+    "Render an InsightsPanel on the principal dashboard, call /dashboard/insights, add ai-insights-panel, and show the four red/orange/yellow/green cards.",
+    "Persist/derive the intended class teacher on student complaints and scope teacher list/update queries to that teacher instead of every institute teacher.",
+    "Use enums/validation for complaint direction and status, rejecting transitions outside pending/under_review/resolved.",
+    "Fix timetable rendering so configured days/periods drive headers/rows and All Batches does not discard colliding batch entries.",
+    "Implement the required secure HttpOnly access-token cookie and explicit credentialed CORS origins, or formally revise the auth playbook if Bearer-only localStorage is intentional.",
+    "Apply the statutory salary breakdown consistently or explicitly validate configured structures against the required Basic/HRA rules.",
+    "Add the referenced branded UPI QR to fee receipts; the current fee_receipt drawing code renders itemization and balances but no QR.",
+    "Add DialogDescription or intentional aria-describedby handling to dialogs."
+  ],
+  "critical_code_review_comments": [
+    "Dashboard.jsx contains no insights state, API request, component, or ai-insights-panel despite the implemented backend endpoint.",
+    "Complaints use only a direction string and never store/resolve a routed teacher ID; list_complaints therefore exposes every teacher/both complaint to every teacher in the tenant.",
+    "ComplaintUpdate.status is an unrestricted string and update_complaint writes it directly; ComplaintUpdate also declares note twice.",
+    "Timetable.jsx reduces all rows into grid[day][slot], guaranteeing cross-batch overwrites in the default All Batches view, and renders constant DAYS/SLOTS rather than generated values.",
+    "fee_receipt has no QR generation/drawing path despite the requested UPI QR and institute upi_id support.",
+    "server.py is 1971 lines and should be split into focused auth, academics, finance, complaints, dashboard, PDF, and seed modules; synchronous requests calls in async routes can block the event loop."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration6_requested.py",
+    "/app/test_reports/pytest/pytest_iteration6_requested.xml",
+    "/app/test_reports/iteration_4.json"
+  ],
+  "success_rate": {
+    "backend": "60% (6/10 targeted tests passed; four intentional security/validation checks failed)",
+    "frontend": "80% of requested end-to-end areas fully passed; Insights is missing and timetable rendering is incomplete"
+  },
+  "seed_data_creation": "Regenerated the live timetable to 120 conflict-free slots. Temporary API/UI students, fees, salaries, and complaints were deleted. One uploaded TEST_UI_evidence.pdf storage record/object may remain orphaned because the product has no file-delete API; disposable lockout records were created for fake TEST_lockout_* identifiers.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "Used principal, teacher1, teacher2, and discovered student STU26DDC67 with credentials from /app/memory/test_credentials.md. /app/auth_testing.md is absent.",
+  "context_for_next_testing_agent": "Backend final run: timetable, admission/move/teacher scope, fee+salary PDFs/default breakdown, Razorpay order, insights contract/RBAC, and role/bcrypt/lockout passed. Complaint teacher scoping, invalid status rejection, HttpOnly cookie, and credentialed CORS failed. UI verified 120-slot generation and PDF, admission/move with both counts refreshed, teacher's exact 9-student scope, multi-role complaint attachment+two audit entries, finance PDF actions, legal routes, and all role dashboards. The complaint created by UI was deleted directly afterward.",
+  "rca_of_the_issue": "Insights is an unintegrated backend-only feature. Complaint privacy and state failures come from a direction-only data model plus unrestricted string fields. Timetable display loss comes from keying the UI grid by day/slot without batch dimension and using hardcoded dimensions. Cookie/CORS failures are explicit server configuration: login only returns JSON and CORSMiddleware sets allow_credentials=False."
+}

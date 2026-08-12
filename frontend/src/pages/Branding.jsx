@@ -18,7 +18,7 @@ export default function Branding() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (institute) setForm({ name: institute.name || "", address: institute.address || "", phone: institute.phone || "", email: institute.email || "", logo_url: institute.logo_url || "", logo_path: institute.logo_path || "", id_template: institute.id_template || "classic" });
+    if (institute) setForm({ name: institute.name || "", address: institute.address || "", phone: institute.phone || "", email: institute.email || "", logo_url: institute.logo_url || "", logo_path: institute.logo_path || "", id_template: institute.id_template || "classic", upi_id: institute.upi_id || "", metro: !!institute.metro });
   }, [institute]);
   if (!form) return <Loader />;
 
@@ -56,6 +56,16 @@ export default function Branding() {
           <div className="grid grid-cols-2 gap-4">
             <div><Label>Phone</Label><Input data-testid="brand-phone" className="mt-1.5" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
             <div><Label>Email</Label><Input data-testid="brand-email" className="mt-1.5" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div><Label>UPI ID (for receipt QR)</Label><Input data-testid="brand-upi" className="mt-1.5" value={form.upi_id} onChange={(e) => setForm({ ...form, upi_id: e.target.value })} placeholder="institute@bank" /></div>
+            <div>
+              <Label>City Type (salary HRA)</Label>
+              <label className="mt-2.5 flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" data-testid="brand-metro" checked={form.metro} onChange={(e) => setForm({ ...form, metro: e.target.checked })} className="rounded border-slate-300 text-violet-600" />
+                Metro city (HRA 50% of Basic)
+              </label>
+            </div>
           </div>
           <div>
             <Label>Master ID Card Template</Label>

@@ -22,6 +22,8 @@ import Enquiries from "@/pages/Enquiries";
 import IDCardPage from "@/pages/IDCardPage";
 import Branding from "@/pages/Branding";
 import BulkIDCards from "@/pages/BulkIDCards";
+import PrivacyPolicy from "@/pages/PrivacyPolicy";
+import Terms from "@/pages/Terms";
 import { Loader } from "@/components/common";
 
 function Protected({ children }) {
@@ -45,6 +47,8 @@ function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Public><Landing /></Public>} />
+            <Route path="/privacy" element={<PrivacyPolicy />} />
+            <Route path="/terms" element={<Terms />} />
             <Route path="/app" element={<Protected><Layout /></Protected>}>
               <Route index element={<Navigate to="/app/dashboard" replace />} />
               <Route path="dashboard" element={<Dashboard />} />

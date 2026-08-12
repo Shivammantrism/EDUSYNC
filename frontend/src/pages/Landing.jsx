@@ -257,6 +257,15 @@ export default function Landing() {
             </form>
           )}
         </motion.div>
+
+        <div className="absolute bottom-4 left-0 right-0 text-center px-4">
+          <p className={`text-[11px] ${dark ? "text-slate-500" : "text-slate-400"}`}>
+            © 2026 EduSync · Privam Solutions ·{" "}
+            <a data-testid="privacy-link" href="/privacy" className="underline hover:text-violet-600">Privacy Policy</a>
+            {" · "}
+            <a data-testid="terms-link" href="/terms" className="underline hover:text-violet-600">Terms of Service</a>
+          </p>
+        </div>
       </div>
 
       <Dialog open={fp.open} onOpenChange={(v) => setFp((s) => ({ ...s, open: v }))}>

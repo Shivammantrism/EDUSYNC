@@ -404,11 +404,13 @@ class ComplaintIn(BaseModel):
     category: Optional[str] = "general"
     direction: Optional[str] = "principal"
     attachment_url: Optional[str] = ""
+    attachments: List[dict] = []
 
 
 class ComplaintUpdate(BaseModel):
     status: str
     response: Optional[str] = ""
+    note: Optional[str] = ""
 
 
 class EnquiryIn(BaseModel):
@@ -660,6 +662,23 @@ async def update_batch(bid: str, body: BatchIn, user=Depends(require("principal"
 async def delete_batch(bid: str, user=Depends(require("principal"))):
     await db.batches.delete_one({"id": bid, "institute_id": user["institute_id"]})
     return {"ok": True}
+
+
+@api.get("/batches/{bid}/students")
+async def batch_students(bid: str, user=Depends(require("principal", "teacher"))):
+    if user["role"] == "teacher" and bid not in await teacher_batches(user):
+        raise HTTPException(403, "Not your batch")
+    return await db.students.find({"institute_id": user["institute_id"], "batch_id": bid},
+                                  {"_id": 0, "password_hash": 0}).sort("name", 1).to_list(2000)
+
+
+@api.put("/students/{sid}/move")
+async def move_student(sid: str, payload: dict, user=Depends(require("principal"))):
+    res = await db.students.update_one({"id": sid, "institute_id": user["institute_id"]},
+                                       {"$set": {"batch_id": payload.get("batch_id", "")}})
+    if res.matched_count == 0:
+        raise HTTPException(404, "Student not found")
+    return await db.students.find_one({"id": sid}, {"_id": 0, "password_hash": 0})
 
 
 # ---------------------------------------------------------------- attendance
@@ -998,12 +1017,25 @@ async def create_salary(body: SalaryIn, user=Depends(require("principal"))):
         raise HTTPException(404, "Teacher not found")
     if await db.salaries.find_one({"teacher_id": body.teacher_id, "month": body.month, "institute_id": user["institute_id"]}):
         raise HTTPException(409, "Salary already generated for this teacher and month")
+    inst = await db.institutes.find_one({"id": user["institute_id"]}) or {}
+    metro = bool(inst.get("metro", False))
     comp = t.get("salary_components") or {}
-    base = float(comp.get("base", t.get("monthly_salary", 0)))
-    hra = float(comp.get("hra", 0))
-    allow = float(comp.get("allowances", 0))
-    ded = float(comp.get("deductions", 0))
-    gross = round(base + hra + allow, 2)
+    ctc = float(t.get("monthly_salary", 0))
+    if comp.get("base") or comp.get("hra") or comp.get("allowances"):
+        base = float(comp.get("base", 0)); hra = float(comp.get("hra", 0)); special = float(comp.get("allowances", 0))
+        gross = round(base + hra + special, 2); extra_ded = float(comp.get("deductions", 0))
+    else:
+        gross = round(ctc, 2)
+        base = round(gross * 0.45, 2)
+        hra = round(base * (0.5 if metro else 0.4), 2)
+        special = round(gross - base - hra, 2)
+        if special < 0:
+            special = 0.0
+        extra_ded = 0.0
+    epf = round(base * 0.12, 2)
+    pt = 200.0 if gross > 0 else 0.0
+    annual = gross * 12
+    tds = round(gross * 0.10, 2) if annual > 1000000 else (round(gross * 0.05, 2) if annual > 500000 else 0.0)
     y, m = int(body.month[:4]), int(body.month[5:7])
     dim = calendar.monthrange(y, m)[1]
     ms, me = date(y, m, 1), date(y, m, dim)
@@ -1017,12 +1049,16 @@ async def create_salary(body: SalaryIn, user=Depends(require("principal"))):
         if s0 <= e0:
             lwp_days += (e0 - s0).days + 1
     lwp_amount = round(gross / dim * lwp_days, 2) if dim else 0
-    net = round(gross - ded - lwp_amount, 2)
+    total_ded = round(epf + pt + tds + extra_ded + lwp_amount, 2)
+    net = round(gross - total_ded, 2)
     sid = str(uuid.uuid4())
     await db.salaries.insert_one({"id": sid, "teacher_id": body.teacher_id, "teacher_name": t["name"],
-                                  "month": body.month, "base": base, "hra": hra, "allowances": allow, "deductions": ded,
-                                  "gross": gross, "days_in_month": dim, "lwp_days": lwp_days, "lwp_amount": lwp_amount,
-                                  "amount": net, "status": "pending", "institute_id": user["institute_id"], "created_at": now_iso()})
+                                  "month": body.month, "base": base, "hra": hra, "special": special, "allowances": special,
+                                  "gross": gross, "epf": epf, "professional_tax": pt, "tds": tds, "extra_deductions": extra_ded,
+                                  "deductions": round(epf + pt + tds + extra_ded, 2), "metro": metro,
+                                  "days_in_month": dim, "lwp_days": lwp_days, "lwp_amount": lwp_amount,
+                                  "total_deductions": total_ded, "amount": net, "status": "pending",
+                                  "institute_id": user["institute_id"], "created_at": now_iso()})
     return await db.salaries.find_one({"id": sid}, {"_id": 0})
 
 
@@ -1069,7 +1105,8 @@ async def list_complaints(user=Depends(get_current_user)):
     if user["role"] == "student":
         q = {"institute_id": user["institute_id"], "raised_by_id": user["id"]}
     elif user["role"] == "teacher":
-        q = {"institute_id": user["institute_id"], "$or": [{"raised_by_id": user["id"]}, {"direction": {"$in": ["teacher", "both"]}}]}
+        q = {"institute_id": user["institute_id"], "$or": [{"raised_by_id": user["id"]},
+             {"$and": [{"direction": {"$in": ["teacher", "both"]}}, {"directed_teacher_id": user["id"]}]}]}
     else:
         q = scope(user)
     return await db.complaints.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
@@ -1079,16 +1116,33 @@ async def list_complaints(user=Depends(get_current_user)):
 async def create_complaint(body: ComplaintIn, user=Depends(require("teacher", "student"))):
     cid = str(uuid.uuid4())
     doc = body.model_dump()
+    directed_teacher_id = ""
+    if user["role"] == "student" and body.direction in ("teacher", "both"):
+        s = await db.students.find_one({"id": user["id"]}, {"_id": 0})
+        if s and s.get("batch_id"):
+            b = await db.batches.find_one({"id": s["batch_id"]}, {"_id": 0})
+            directed_teacher_id = (b or {}).get("teacher_id", "")
     doc.update({"id": cid, "institute_id": user["institute_id"], "raised_by_id": user["id"], "raised_by": user["name"],
-                "raised_by_role": user["role"], "status": "open", "response": "", "created_at": now_iso()})
+                "raised_by_role": user["role"], "directed_teacher_id": directed_teacher_id,
+                "status": "pending", "response": "", "audit": [], "created_at": now_iso()})
     await db.complaints.insert_one(doc)
     return await db.complaints.find_one({"id": cid}, {"_id": 0})
 
 
 @api.put("/complaints/{cid}")
-async def update_complaint(cid: str, body: ComplaintUpdate, user=Depends(require("principal"))):
+async def update_complaint(cid: str, body: ComplaintUpdate, user=Depends(require("principal", "teacher"))):
+    comp = await db.complaints.find_one({"id": cid, "institute_id": user["institute_id"]}, {"_id": 0})
+    if not comp:
+        raise HTTPException(404, "Not found")
+    if body.status not in ("pending", "under_review", "resolved"):
+        raise HTTPException(422, "Invalid status")
+    if user["role"] == "teacher" and comp.get("directed_teacher_id") != user["id"] and comp.get("raised_by_id") != user["id"]:
+        raise HTTPException(403, "Not authorised for this complaint")
+    entry = {"by": user["name"], "by_role": user["role"], "from_status": comp.get("status", ""),
+             "to_status": body.status, "note": body.note or "", "at": now_iso()}
     await db.complaints.update_one({"id": cid, "institute_id": user["institute_id"]},
-                                   {"$set": {"status": body.status, "response": body.response or "", "updated_at": now_iso()}})
+                                   {"$set": {"status": body.status, "response": body.response or comp.get("response", ""), "updated_at": now_iso()},
+                                    "$push": {"audit": entry}})
     return await db.complaints.find_one({"id": cid}, {"_id": 0})
 
 
@@ -1369,20 +1423,44 @@ async def salary_slip(sid: str, user=Depends(require("principal", "teacher"))):
     w, h = A4
     draw_watermark(c, inst, w, h)
     draw_letterhead(c, inst, w, h, f"Salary Slip - {sal['month']}")
-    y = h - 4.7 * cm
-    rows = [("Employee", sal["teacher_name"]), ("Month", sal["month"]),
-            ("Base Pay", f"Rs. {sal.get('base', sal['amount'])}"), ("HRA", f"Rs. {sal.get('hra', 0)}"),
-            ("Allowances", f"Rs. {sal.get('allowances', 0)}"), ("Gross", f"Rs. {sal.get('gross', sal['amount'])}"),
-            ("Deductions", f"- Rs. {sal.get('deductions', 0)}"),
-            (f"LWP ({sal.get('lwp_days', 0)} day/{sal.get('days_in_month', 30)} days)", f"- Rs. {sal.get('lwp_amount', 0)}"),
-            ("NET PAY", f"Rs. {sal['amount']}"), ("Status", sal["status"].upper()), ("Slip No", sal.get("slip_no", "-"))]
-    for label, val in rows:
-        highlight = label in ("NET PAY", "Gross")
-        c.setFillColor(colors.HexColor("#059669") if highlight else colors.HexColor("#1E3A8A"))
-        c.setFont("Helvetica-Bold", 11); c.drawString(2 * cm, y, label + ":")
-        c.setFillColor(colors.HexColor("#059669") if highlight else colors.HexColor("#0F172A"))
-        c.setFont("Helvetica-Bold" if highlight else "Helvetica", 11); c.drawString(9 * cm, y, str(val)); y -= 0.75 * cm
-    c.setFillColor(colors.HexColor("#0F172A"))
+    y = h - 4.9 * cm
+    c.setFillColor(colors.HexColor("#0F172A")); c.setFont("Helvetica-Bold", 11)
+    c.drawString(2 * cm, y, f"Employee: {sal['teacher_name']}")
+    c.drawRightString(w - 2 * cm, y, f"Month: {sal['month']}"); y -= 0.55 * cm
+    c.setFont("Helvetica", 9); c.setFillColor(colors.HexColor("#64748B"))
+    c.drawString(2 * cm, y, f"HRA basis: {'Metro (50%)' if sal.get('metro') else 'Non-Metro (40%)'}   |   Days: {sal.get('days_in_month', 30)}   |   Slip: {sal.get('slip_no', '-')}")
+    y -= 0.85 * cm
+    colL, colR = 2 * cm, 11 * cm
+    c.setFont("Helvetica-Bold", 11)
+    c.setFillColor(colors.HexColor("#1E3A8A")); c.drawString(colL, y, "Earnings")
+    c.setFillColor(colors.HexColor("#DC2626")); c.drawString(colR, y, "Deductions")
+    y -= 0.18 * cm; c.setStrokeColor(colors.HexColor("#E2E8F0"))
+    c.line(colL, y, colL + 7 * cm, y); c.line(colR, y, colR + 6 * cm, y); y -= 0.55 * cm
+    earn = [("Basic Pay", sal.get('base', 0)), ("HRA", sal.get('hra', 0)), ("Special Allowance", sal.get('special', sal.get('allowances', 0)))]
+    ded = [("EPF (12% of Basic)", sal.get('epf', 0)), ("Professional Tax", sal.get('professional_tax', 0)), ("TDS", sal.get('tds', 0))]
+    if sal.get('extra_deductions', 0):
+        ded.append(("Other Deductions", sal.get('extra_deductions', 0)))
+    if sal.get('lwp_amount', 0):
+        ded.append((f"LWP ({sal.get('lwp_days', 0)}d)", sal.get('lwp_amount', 0)))
+    c.setFont("Helvetica", 10)
+    y0 = y
+    for i in range(max(len(earn), len(ded))):
+        yy = y0 - i * 0.55 * cm
+        c.setFillColor(colors.HexColor("#0F172A"))
+        if i < len(earn):
+            c.drawString(colL, yy, earn[i][0]); c.drawRightString(colL + 7 * cm, yy, f"Rs. {earn[i][1]}")
+        if i < len(ded):
+            c.drawString(colR, yy, ded[i][0]); c.drawRightString(colR + 6 * cm, yy, f"Rs. {ded[i][1]}")
+    y = y0 - max(len(earn), len(ded)) * 0.55 * cm - 0.35 * cm
+    c.setStrokeColor(colors.HexColor("#E2E8F0")); c.line(colL, y, w - 2 * cm, y); y -= 0.6 * cm
+    c.setFont("Helvetica-Bold", 11)
+    c.setFillColor(colors.HexColor("#1E3A8A")); c.drawString(colL, y, f"Gross: Rs. {sal.get('gross', sal['amount'])}")
+    c.setFillColor(colors.HexColor("#DC2626")); c.drawRightString(w - 2 * cm, y, f"Total Deductions: Rs. {sal.get('total_deductions', sal.get('deductions', 0))}")
+    y -= 1.0 * cm
+    c.setFillColor(colors.HexColor("#059669")); c.setFont("Helvetica-Bold", 15)
+    c.drawString(colL, y, f"NET PAY: Rs. {sal['amount']}")
+    c.setFont("Helvetica", 10); c.setFillColor(colors.HexColor("#0F172A"))
+    c.drawRightString(w - 2 * cm, y, f"Status: {sal['status'].upper()}")
     c.setFillColor(colors.HexColor("#64748B")); c.setFont("Helvetica-Oblique", 8)
     c.drawString(2 * cm, 1.5 * cm, "Generated by EduSync — Privam Solutions")
     c.showPage(); c.save(); buf.seek(0)
@@ -1426,6 +1504,56 @@ async def principal_dashboard(user=Depends(require("principal"))):
                      "open_complaints": open_complaints},
             "fee_chart": fee_chart, "attendance_chart": att_chart,
             "recent_students": recent_students, "recent_complaints": recent_complaints}
+
+
+@api.get("/dashboard/insights")
+async def principal_insights(user=Depends(require("principal"))):
+    iid = user["institute_id"]
+    students = await db.students.find({"institute_id": iid}, {"_id": 0, "id": 1, "name": 1, "student_id": 1}).to_list(5000)
+    low = []
+    for s in students:
+        total = await db.attendance.count_documents({"student_id": s["id"]})
+        if total == 0:
+            continue
+        present = await db.attendance.count_documents({"student_id": s["id"], "status": "present"})
+        pct = round(present / total * 100, 1)
+        if pct < 75:
+            low.append({"name": s["name"], "student_id": s.get("student_id", ""), "pct": pct})
+    low.sort(key=lambda x: x["pct"])
+
+    pend = await db.leaves.find({"institute_id": iid, "status": "pending"}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    pending_list = [{"teacher_name": l.get("teacher_name", ""), "from_date": l.get("from_date"),
+                     "to_date": l.get("to_date"), "reason": l.get("reason", "")} for l in pend]
+
+    tt = await db.timetable.find({"institute_id": iid}, {"_id": 0}).to_list(5000)
+    seen = {}
+    conflicts = []
+    for e in tt:
+        tid = e.get("teacher_id")
+        if not tid:
+            continue
+        key = (e.get("day"), e.get("slot"), tid)
+        if key in seen:
+            conflicts.append({"teacher_name": e.get("teacher_name", ""), "day": e.get("day"), "slot": e.get("slot"),
+                              "batches": f'{seen[key]} & {e.get("batch_name", "")}'})
+        else:
+            seen[key] = e.get("batch_name", "")
+
+    last7 = [(date.today() - timedelta(days=i)).isoformat() for i in range(0, 7)]
+    prev7 = [(date.today() - timedelta(days=i)).isoformat() for i in range(7, 14)]
+    cur = await db.attendance.count_documents({"institute_id": iid, "status": "present", "date": {"$in": last7}})
+    prevc = await db.attendance.count_documents({"institute_id": iid, "status": "present", "date": {"$in": prev7}})
+    if prevc > 0:
+        improvement = round((cur - prevc) / prevc * 100, 1)
+    else:
+        improvement = 100.0 if cur > 0 else 0.0
+
+    return {
+        "low_attendance": {"count": len(low), "students": low[:10]},
+        "pending_approvals": {"count": len(pending_list), "items": pending_list[:10]},
+        "timetable_conflicts": {"count": len(conflicts), "items": conflicts[:10]},
+        "attendance_improvement": {"value": improvement, "current": cur, "previous": prevc},
+    }
 
 
 @api.get("/dashboard/teacher")
@@ -1566,7 +1694,9 @@ async def fee_receipt(fee_id: str, user=Depends(get_current_user)):
     c.setFont("Helvetica", 10)
     c.drawString(2 * cm, y, f"Receipt No: {fee.get('receipt_no','-')}")
     c.drawRightString(w - 2 * cm, y, f"Date: {datetime.now().strftime('%d %b %Y')}"); y -= 0.7 * cm
-    c.drawString(2 * cm, y, f"Student: {fee.get('student_name')}    Month: {fee.get('month')}"); y -= 1 * cm
+    c.drawString(2 * cm, y, f"Student: {fee.get('student_name')}    Month: {fee.get('month')}"); y -= 0.6 * cm
+    pay_date = (fee.get('paid_at') or '')[:10]
+    c.drawString(2 * cm, y, f"Payment Date: {pay_date or '-'}    Status: {fee.get('status', '').upper()}"); y -= 0.9 * cm
     c.setFillColor(colors.HexColor("#1E3A8A")); c.setFont("Helvetica-Bold", 11); c.drawString(2 * cm, y, "Particulars"); c.drawRightString(w - 2 * cm, y, "Amount (Rs.)")
     c.setFillColor(colors.HexColor("#0F172A"))
     y -= 0.25 * cm; c.setStrokeColor(colors.HexColor("#10B981")); c.setLineWidth(1.4); c.line(2 * cm, y, w - 2 * cm, y); c.setLineWidth(1); y -= 0.6 * cm
@@ -1581,6 +1711,27 @@ async def fee_receipt(fee_id: str, user=Depends(get_current_user)):
     rem = round(float(fee['amount']) - float(fee.get('paid_amount', 0)), 2)
     c.setFillColor(colors.HexColor("#DC2626") if rem > 0 else colors.HexColor("#16A34A"))
     c.drawString(2 * cm, y, "Balance Due"); c.drawRightString(w - 2 * cm, y, f"{rem}")
+    pd = (fee.get('paid_at') or '')[:10]
+    c.setFillColor(colors.HexColor("#0F172A")); c.setFont("Helvetica", 10)
+    c.drawString(2 * cm, 2.7 * cm, f"Payment Date: {pd or '-'}    Status: {fee.get('status', '').upper()}")
+    try:
+        import qrcode
+        from reportlab.lib.utils import ImageReader
+        upi = (inst or {}).get("upi_id")
+        rem_amt = max(round(float(fee['amount']) - float(fee.get('paid_amount', 0)), 2), 0)
+        if upi:
+            iname = (inst.get('name') or 'EduSync').replace(' ', '%20')
+            qr_data = f"upi://pay?pa={upi}&pn={iname}&am={rem_amt}&cu=INR&tn=Fee%20{fee.get('month', '')}"
+            qr_caption = f"Scan to pay via UPI - {upi}"
+        else:
+            qr_data = f"EduSync Receipt {fee.get('receipt_no', '-')} | {fee.get('student_name')} | {fee.get('month')} | Paid Rs.{fee.get('paid_amount', 0)}"
+            qr_caption = "Scan to verify receipt"
+        qb = io.BytesIO(); qrcode.make(qr_data).save(qb, format="PNG"); qb.seek(0)
+        c.drawImage(ImageReader(qb), w - 5.6 * cm, 2.4 * cm, width=3 * cm, height=3 * cm, mask='auto')
+        c.setFillColor(colors.HexColor("#64748B")); c.setFont("Helvetica", 7.5)
+        c.drawCentredString(w - 4.1 * cm, 2.1 * cm, qr_caption)
+    except Exception as e:
+        logger.warning(f"receipt QR failed: {e}")
     c.setFillColor(colors.HexColor("#64748B")); c.setFont("Helvetica-Oblique", 8)
     c.drawString(2 * cm, 1.5 * cm, "This is a computer-generated receipt. Generated by EduSync - Privam Solutions")
     c.showPage(); c.save(); buf.seek(0)
@@ -1665,8 +1816,9 @@ async def get_institute(user=Depends(get_current_user)):
 
 
 @api.put("/institute")
-async def update_institute(body: InstituteUpdate, user=Depends(require("principal"))):
-    upd = {k: v for k, v in body.model_dump().items() if v is not None}
+async def update_institute(payload: dict, user=Depends(require("principal"))):
+    allowed = {"name", "address", "phone", "email", "logo_url", "logo_path", "id_template", "upi_id", "metro"}
+    upd = {k: v for k, v in payload.items() if k in allowed and v is not None}
     await db.institutes.update_one({"id": user["institute_id"]}, {"$set": upd})
     return await db.institutes.find_one({"id": user["institute_id"]}, {"_id": 0})
 

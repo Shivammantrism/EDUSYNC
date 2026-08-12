@@ -9,11 +9,12 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { GraduationCap, Plus, Users, Trash2, Printer } from "lucide-react";
+import { GraduationCap, Plus, Users, Trash2, Printer, ArrowRightLeft } from "lucide-react";
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const CLASSES = ["Nursery", "LKG", "UKG", "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th", "10th", "11th", "12th"];
 const SECTIONS = ["A", "B", "C", "D"];
+const label = (b) => `${b.name}${b.class_name ? ` · ${b.class_name}${b.section ? "-" + b.section : ""}` : ""}`;
 
 export default function Batches() {
   const navigate = useNavigate();
@@ -21,6 +22,8 @@ export default function Batches() {
   const [teachers, setTeachers] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: "", subject: "", teacher_id: "", room: "", class_name: "", section: "", schedule_days: DAYS.slice(0, 5) });
+  const [viewBatch, setViewBatch] = useState(null);
+  const [roster, setRoster] = useState(null);
 
   const load = () => api.get("/batches").then((r) => setBatches(r.data));
   useEffect(() => { load(); api.get("/teachers").then((r) => setTeachers(r.data)); }, []);
@@ -30,6 +33,20 @@ export default function Batches() {
     catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
   };
   const del = async (id) => { await api.delete(`/batches/${id}`); toast.success("Deleted"); load(); };
+
+  const openStudents = async (b) => {
+    setViewBatch(b); setRoster(null);
+    try { const { data } = await api.get(`/batches/${b.id}/students`); setRoster(data); }
+    catch (e) { toast.error(formatErr(e.response?.data?.detail)); setRoster([]); }
+  };
+  const moveStudent = async (sid, toBatch) => {
+    try {
+      await api.put(`/students/${sid}/move`, { batch_id: toBatch });
+      toast.success("Student moved");
+      setRoster((r) => r.filter((s) => s.id !== sid));
+      load();
+    } catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
+  };
 
   if (!batches) return <Loader />;
   return (
@@ -84,17 +101,52 @@ export default function Batches() {
               )}
               <p className="text-sm text-slate-500 mt-1">{b.subject || "—"} · {b.room}</p>
               <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between text-sm">
-                <span className="text-slate-500 flex items-center gap-1"><Users className="h-4 w-4" />{b.student_count} students</span>
+                <span data-testid={`batch-strength-${b.id}`} className="text-slate-500 flex items-center gap-1"><Users className="h-4 w-4" />{b.student_count} students</span>
                 <span className="text-slate-700 font-medium">{b.teacher_name}</span>
               </div>
-              <button data-testid={`print-ids-${b.id}`} onClick={() => navigate(`/app/print-ids/${b.id}`)}
-                className="mt-3 w-full text-xs font-semibold text-blue-600 border border-blue-200 rounded-lg py-2 hover:bg-blue-50 flex items-center justify-center gap-1.5 transition-colors">
-                <Printer className="h-3.5 w-3.5" /> Print Batch ID Cards
-              </button>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button data-testid={`view-students-${b.id}`} onClick={() => openStudents(b)}
+                  className="text-xs font-semibold text-violet-600 border border-violet-200 rounded-lg py-2 hover:bg-violet-50 flex items-center justify-center gap-1.5 transition-colors">
+                  <Users className="h-3.5 w-3.5" /> View Students
+                </button>
+                <button data-testid={`print-ids-${b.id}`} onClick={() => navigate(`/app/print-ids/${b.id}`)}
+                  className="text-xs font-semibold text-blue-600 border border-blue-200 rounded-lg py-2 hover:bg-blue-50 flex items-center justify-center gap-1.5 transition-colors">
+                  <Printer className="h-3.5 w-3.5" /> Print IDs
+                </button>
+              </div>
             </Card>
           ))}
         </div>
       )}
+
+      <Dialog open={!!viewBatch} onOpenChange={(v) => !v && setViewBatch(null)}>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>{viewBatch ? label(viewBatch) : ""} · {roster?.length ?? "…"} students</DialogTitle></DialogHeader>
+          {roster === null ? <Loader /> : roster.length === 0 ? (
+            <p className="text-sm text-slate-400 py-4">No students in this batch yet. Assign students during admission.</p>
+          ) : (
+            <div className="space-y-2">
+              {roster.map((s) => (
+                <div key={s.id} data-testid={`roster-${s.id}`} className="flex items-center justify-between border border-slate-200 rounded-lg px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="font-medium text-slate-800 text-sm truncate">{s.name}</p>
+                    <p className="text-xs text-slate-400 font-mono">{s.student_id}</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <ArrowRightLeft className="h-3.5 w-3.5 text-slate-400" />
+                    <Select onValueChange={(v) => moveStudent(s.id, v)}>
+                      <SelectTrigger data-testid={`move-${s.id}`} className="h-8 w-40 text-xs"><SelectValue placeholder="Move to…" /></SelectTrigger>
+                      <SelectContent>
+                        {batches.filter((b) => b.id !== viewBatch?.id).map((b) => <SelectItem key={b.id} value={b.id}>{label(b)}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
