@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Banknote, Plus, CheckCircle2, Download, SlidersHorizontal } from "lucide-react";
+import { Banknote, Plus, CheckCircle2, Download, SlidersHorizontal, Mail } from "lucide-react";
 
 export default function Salary() {
   const { user } = useAuth();
@@ -40,6 +40,7 @@ export default function Salary() {
     catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
   };
   const slip = (id) => { const token = localStorage.getItem("edusync_token"); fetch(`${API}/salaries/${id}/slip`, { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.blob()).then((b) => window.open(URL.createObjectURL(b))); };
+  const emailSlip = async (id) => { try { const { data } = await api.post(`/salaries/${id}/email-slip`); toast.success(`Slip emailed to ${data.to}`); } catch (e) { toast.error(formatErr(e.response?.data?.detail)); } };
 
   if (!salaries) return <Loader />;
   return (
@@ -104,6 +105,7 @@ export default function Salary() {
                 <TableCell className="text-right space-x-2">
                   {s.status === "pending" && isPrincipal && <Button data-testid={`pay-salary-${s.id}`} size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => pay(s.id)}><CheckCircle2 className="h-3.5 w-3.5 mr-1" />Pay</Button>}
                   {s.status === "paid" && <Button data-testid={`slip-${s.id}`} size="sm" variant="outline" onClick={() => slip(s.id)}><Download className="h-3.5 w-3.5 mr-1" />Slip</Button>}
+                  {s.status === "paid" && isPrincipal && <Button data-testid={`email-slip-${s.id}`} size="sm" variant="outline" onClick={() => emailSlip(s.id)}><Mail className="h-3.5 w-3.5 mr-1" />Email</Button>}
                 </TableCell>
               </TableRow>
             ))}</TableBody>

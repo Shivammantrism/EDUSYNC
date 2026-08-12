@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import api, { formatErr, fileUrl } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader, Loader, Empty } from "@/components/common";
@@ -19,10 +19,12 @@ export default function Students() {
   const [students, setStudents] = useState(null);
   const [batches, setBatches] = useState([]);
   const [q, setQ] = useState("");
+  const [sp] = useSearchParams();
+  const clsParam = sp.get("class");
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const blank = { name: "", age: "", gender: "Male", batch_id: "", parent_name: "", parent_phone: "", monthly_fee: 2000, photo_url: "", template: "classic", password: "student123" };
+  const blank = { name: "", age: "", gender: "Male", batch_id: "", parent_name: "", parent_phone: "", parent_email: "", monthly_fee: 2000, photo_url: "", template: "classic", password: "student123" };
   const [form, setForm] = useState(blank);
 
   const load = () => api.get("/students").then((r) => setStudents(r.data));
@@ -50,7 +52,7 @@ export default function Students() {
   };
 
   if (!students) return <Loader />;
-  const filtered = students.filter((s) => s.name.toLowerCase().includes(q.toLowerCase()) || s.student_id.toLowerCase().includes(q.toLowerCase()));
+  const filtered = students.filter((s) => (s.name.toLowerCase().includes(q.toLowerCase()) || s.student_id.toLowerCase().includes(q.toLowerCase())) && (!clsParam || s.batch_id === clsParam));
 
   return (
     <div>
@@ -92,6 +94,7 @@ export default function Students() {
                   <div><Label>Parent Name</Label><Input value={form.parent_name} onChange={(e) => setForm({ ...form, parent_name: e.target.value })} /></div>
                   <div><Label>Parent Phone</Label><Input data-testid="student-parent-phone" value={form.parent_phone} onChange={(e) => setForm({ ...form, parent_phone: e.target.value })} /></div>
                 </div>
+                <div><Label>Parent / Student Email <span className="text-xs font-normal text-slate-400">(for fee receipts)</span></Label><Input data-testid="student-parent-email" type="email" value={form.parent_email} onChange={(e) => setForm({ ...form, parent_email: e.target.value })} placeholder="parent@example.com" /></div>
                 <div className="grid grid-cols-2 gap-3">
                   <div><Label>Monthly Fee (₹)</Label><Input type="number" value={form.monthly_fee} onChange={(e) => setForm({ ...form, monthly_fee: e.target.value })} /></div>
                   <div><Label>ID Card Template</Label>

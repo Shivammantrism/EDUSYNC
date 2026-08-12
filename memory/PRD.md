@@ -110,6 +110,11 @@ Multi-institute management SaaS with two connected portals sharing one database.
 - Gallery students only get All/Institute album chips (don't fetch /batches) — add class chips for students.
 - server.py is ~2.5k lines — split by domain (refactor).
 
+## Implemented (2026-06, forked session, part 3) — Email slip/receipt, deep-filters, dates
+- **Email salary slip & fee receipt** to the specific faculty/student: POST /salaries/{id}/email-slip (principal) and POST /fees/{id}/email-receipt (principal) send a richly formatted HTML slip/receipt via the managed email proxy. UI: "Email" buttons on Salary (paid rows) and Fees (paid/partial rows). Student form now captures Parent/Student Email (StudentIn.parent_email) so receipts can be delivered. NOTE: delivery fails for fake demo emails (@edusync.in) — real emails deliver.
+- **Class deep-filters**: dashboard Students (`?class=`) and Homework (`?class=`) quick-links now pre-filter to that class (Attendance already did).
+- **Dates DD-MM-YYYY** extended to Exams table (exam_date), Leaves table (from/to), leave application email, and PDF fee receipt (date + payment date).
+
 ## Verification status (forked session)
 - Backend curl-verified: ID migration/continuation, quiz create/attempt scoring w/ negative marking, batch-auth 403, insights buckets (red=3/orange=15), auto-absent dedup flag, student AI summary, student report PDF, homework/exam notify hooks present.
 - Frontend compiles clean (only pre-existing html5-qrcode source-map + react-hooks/exhaustive-deps warnings).

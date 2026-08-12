@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Wallet, Plus, Bell, CheckCircle2, CreditCard, Loader2, Settings2, Trash2, Download, BellRing } from "lucide-react";
+import { Wallet, Plus, Bell, CheckCircle2, CreditCard, Loader2, Settings2, Trash2, Download, BellRing, Mail } from "lucide-react";
 
 function loadRzp() {
   return new Promise((resolve) => {
@@ -70,6 +70,7 @@ export default function Fees() {
   };
   const remind = async (id) => { const { data } = await api.post(`/fees/${id}/reminder`); (data.sms_sent ? toast.success : toast.info)(data.message); };
   const remindAll = async () => { const { data } = await api.post("/fees/send-overdue-reminders"); toast.success(data.message); };
+  const emailReceipt = async (id) => { try { const { data } = await api.post(`/fees/${id}/email-receipt`); toast.success(`Receipt emailed to ${data.to}`); } catch (e) { toast.error(formatErr(e.response?.data?.detail)); } };
 
   const payOnline = async (fee) => {
     setPaying(fee.id);
@@ -249,6 +250,7 @@ export default function Fees() {
                         </Button>
                       ))}
                       {(f.paid_amount > 0 || f.status === "paid") && <Button data-testid={`receipt-${f.id}`} size="sm" variant="outline" onClick={() => downloadPdf(`/fees/${f.id}/receipt`)}><Download className="h-3.5 w-3.5" /></Button>}
+                      {(f.paid_amount > 0 || f.status === "paid") && isPrincipal && <Button data-testid={`email-receipt-${f.id}`} size="sm" variant="outline" onClick={() => emailReceipt(f.id)}><Mail className="h-3.5 w-3.5" /></Button>}
                     </div>
                   </TableCell>
                 </TableRow>

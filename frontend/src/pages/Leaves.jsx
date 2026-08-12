@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import api, { formatErr } from "@/lib/api";
+import api, { formatErr, fmtDate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader, Loader, Empty, StatusBadge } from "@/components/common";
 import { Button } from "@/components/ui/button";
@@ -55,7 +55,7 @@ export default function Leaves() {
             <TableBody>{items.map((l) => (
               <TableRow key={l.id} data-testid={`leave-row-${l.id}`}>
                 {isPrincipal && <TableCell className="font-medium">{l.teacher_name}</TableCell>}
-                <TableCell>{l.from_date}</TableCell><TableCell>{l.to_date}</TableCell><TableCell className="text-slate-500">{l.reason}</TableCell>
+                <TableCell>{fmtDate(l.from_date)}</TableCell><TableCell>{fmtDate(l.to_date)}</TableCell><TableCell className="text-slate-500">{l.reason}</TableCell>
                 <TableCell><StatusBadge status={l.status} /></TableCell>
                 {isPrincipal && <TableCell className="text-right space-x-2">
                   {l.status === "pending" && <>

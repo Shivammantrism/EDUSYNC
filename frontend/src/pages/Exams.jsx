@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import api, { formatErr } from "@/lib/api";
+import api, { formatErr, fmtDate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader, Loader, Empty, StatusBadge } from "@/components/common";
 import { Button } from "@/components/ui/button";
@@ -96,7 +96,7 @@ export default function Exams() {
             <TableHeader><TableRow><TableHead>Exam</TableHead><TableHead>Subject</TableHead><TableHead>Date</TableHead><TableHead>Max</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
             <TableBody>{exams.map((e) => (
               <TableRow key={e.id}>
-                <TableCell className="font-medium">{e.name}</TableCell><TableCell>{e.subject}</TableCell><TableCell className="text-slate-500">{e.exam_date}</TableCell><TableCell>{e.max_marks}</TableCell>
+                <TableCell className="font-medium">{e.name}</TableCell><TableCell>{e.subject}</TableCell><TableCell className="text-slate-500">{fmtDate(e.exam_date)}</TableCell><TableCell>{e.max_marks}</TableCell>
                 <TableCell className="text-right space-x-2">
                   <Button data-testid={`marks-${e.id}`} size="sm" variant="outline" onClick={() => openMarks(e)}><ClipboardEdit className="h-3.5 w-3.5 mr-1" />Enter Marks</Button>
                   <Button data-testid={`results-${e.id}`} size="sm" variant="outline" onClick={() => openResults(e)}><Trophy className="h-3.5 w-3.5 mr-1" />Results</Button>

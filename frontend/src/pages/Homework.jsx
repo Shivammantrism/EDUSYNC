@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import api, { formatErr, fileUrl, fmtDate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader, Loader, Empty, StatusBadge } from "@/components/common";
@@ -26,6 +27,8 @@ export default function Homework() {
   const [content, setContent] = useState("");
   const [subFile, setSubFile] = useState({ url: "", name: "" });
   const [uploading, setUploading] = useState(false);
+  const [sp] = useSearchParams();
+  const clsParam = sp.get("class");
 
   const load = () => api.get("/homework").then((r) => setHw(r.data));
   useEffect(() => { load(); if (isStaff) api.get("/batches").then((r) => setBatches(r.data)); }, []);
@@ -86,7 +89,7 @@ export default function Homework() {
       } />
       {hw.length === 0 ? <Empty icon={BookOpen} title="No homework" /> : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {hw.map((h) => (
+          {hw.filter((h) => !clsParam || h.batch_id === clsParam).map((h) => (
             <Card key={h.id} data-testid={`hw-card-${h.id}`} className="p-5 border-slate-200 stat-card flex flex-col">
               <div className="h-10 w-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mb-3"><BookOpen className="h-5 w-5" /></div>
               <p className="font-bold text-slate-900 font-heading">{h.title}</p>
