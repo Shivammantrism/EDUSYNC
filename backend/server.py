@@ -867,6 +867,25 @@ async def mark_fee_paid(fee_id: str, user=Depends(require("principal"))):
     return {"ok": True, "receipt_no": receipt_no}
 
 
+@api.get("/fees/stats")
+async def fee_stats(user=Depends(require("principal"))):
+    online = cash = 0.0
+    oc = cc = 0
+    for f in await db.fees.find(scope(user), {"_id": 0, "paid_amount": 1, "payment_id": 1}).to_list(10000):
+        amt = float(f.get("paid_amount", 0) or 0)
+        if amt <= 0:
+            continue
+        if f.get("payment_id") and f.get("payment_id") != "CASH":
+            online += amt; oc += 1
+        else:
+            cash += amt; cc += 1
+    total = round(online + cash, 2)
+    return {"online": round(online, 2), "cash": round(cash, 2), "total": total,
+            "online_count": oc, "cash_count": cc,
+            "online_pct": round(online / total * 100, 1) if total else 0,
+            "cash_pct": round(cash / total * 100, 1) if total else 0}
+
+
 @api.post("/fees/{fee_id}/reminder")
 async def send_fee_reminder(fee_id: str, user=Depends(require("principal"))):
     fee = await db.fees.find_one({"id": fee_id, "institute_id": user["institute_id"]})

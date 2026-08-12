@@ -7,9 +7,11 @@ import {
   AreaChart, Area,
 } from "recharts";
 import { Users, CalendarCheck, Wallet, UserCheck, MessageSquareWarning, BookOpen, Award, TrendingUp, Phone, GraduationCap, AlertTriangle, Clock, CalendarX, Sparkles } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 function InsightsPanel() {
   const [ins, setIns] = useState(null);
+  const [detail, setDetail] = useState(null);
   useEffect(() => {
     const go = () => api.get("/dashboard/insights").then((r) => setIns(r.data)).catch(() => {});
     go();
@@ -20,13 +22,21 @@ function InsightsPanel() {
   const v = ins.attendance_improvement?.value ?? 0;
   const cards = [
     { key: "low", tone: "red", icon: AlertTriangle, title: "Low Attendance (<75%)", value: ins.low_attendance.count,
-      desc: ins.low_attendance.count ? ins.low_attendance.students.slice(0, 3).map((s) => `${s.name} (${s.pct}%)`).join(", ") + (ins.low_attendance.count > 3 ? "…" : "") : "All students above 75%", testid: "insight-low-attendance" },
+      desc: ins.low_attendance.count ? ins.low_attendance.students.slice(0, 3).map((s) => `${s.name} (${s.pct}%)`).join(", ") + (ins.low_attendance.count > 3 ? "…" : "") : "All students above 75%",
+      testid: "insight-low-attendance",
+      rows: ins.low_attendance.students.map((s) => `${s.name} · ${s.student_id} · ${s.pct}%`) },
     { key: "pend", tone: "orange", icon: Clock, title: "Pending Leave Approvals", value: ins.pending_approvals.count,
-      desc: ins.pending_approvals.count ? ins.pending_approvals.items.slice(0, 3).map((i) => i.teacher_name).join(", ") : "No pending approvals", testid: "insight-pending-approvals" },
+      desc: ins.pending_approvals.count ? ins.pending_approvals.items.slice(0, 3).map((i) => i.teacher_name).join(", ") : "No pending approvals",
+      testid: "insight-pending-approvals",
+      rows: ins.pending_approvals.items.map((i) => `${i.teacher_name} · ${i.from_date} → ${i.to_date}${i.reason ? " · " + i.reason : ""}`) },
     { key: "conf", tone: "yellow", icon: CalendarX, title: "Timetable Conflicts", value: ins.timetable_conflicts.count,
-      desc: ins.timetable_conflicts.count ? ins.timetable_conflicts.items.slice(0, 2).map((i) => `${i.teacher_name} · ${i.day} ${i.slot}`).join("; ") : "No scheduling clashes", testid: "insight-timetable-conflicts" },
+      desc: ins.timetable_conflicts.count ? ins.timetable_conflicts.items.slice(0, 2).map((i) => `${i.teacher_name} · ${i.day} ${i.slot}`).join("; ") : "No scheduling clashes",
+      testid: "insight-timetable-conflicts",
+      rows: ins.timetable_conflicts.items.map((i) => `${i.teacher_name} · ${i.day} ${i.slot} · ${i.batches}`) },
     { key: "trend", tone: "green", icon: TrendingUp, title: "Attendance Trend (7d)", value: `${v > 0 ? "+" : ""}${v}%`,
-      desc: v >= 0 ? "Improved vs last week" : "Down vs last week", testid: "insight-attendance-trend" },
+      desc: v >= 0 ? "Improved vs last week" : "Down vs last week",
+      testid: "insight-attendance-trend",
+      rows: [`Present marked last 7 days: ${ins.attendance_improvement.current}`, `Previous 7 days: ${ins.attendance_improvement.previous}`, `Change: ${v > 0 ? "+" : ""}${v}%`] },
   ];
   const tones = { red: "bg-red-50 border-red-200 text-red-700", orange: "bg-orange-50 border-orange-200 text-orange-700", yellow: "bg-amber-50 border-amber-200 text-amber-700", green: "bg-emerald-50 border-emerald-200 text-emerald-700" };
   const it = { red: "bg-red-100 text-red-600", orange: "bg-orange-100 text-orange-600", yellow: "bg-amber-100 text-amber-600", green: "bg-emerald-100 text-emerald-600" };
@@ -38,16 +48,27 @@ function InsightsPanel() {
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {cards.map((c) => (
-          <div key={c.key} data-testid={c.testid} className={`rounded-xl border p-4 ${tones[c.tone]}`}>
+          <button key={c.key} data-testid={c.testid} onClick={() => setDetail({ title: c.title, rows: c.rows })}
+            className={`text-left rounded-xl border p-4 transition-shadow hover:shadow-md ${tones[c.tone]}`}>
             <div className="flex items-center justify-between">
               <div className={`h-9 w-9 rounded-lg grid place-items-center ${it[c.tone]}`}><c.icon className="h-4 w-4" /></div>
               <span className="text-2xl font-extrabold">{c.value}</span>
             </div>
             <p className="font-semibold text-sm mt-2">{c.title}</p>
             <p className="text-xs opacity-80 mt-1 line-clamp-2">{c.desc}</p>
-          </div>
+          </button>
         ))}
       </div>
+      <Dialog open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>
+        <DialogContent data-testid="insight-detail-dialog">
+          <DialogHeader><DialogTitle>{detail?.title}</DialogTitle></DialogHeader>
+          {(detail?.rows?.length || 0) === 0 ? <p className="text-sm text-slate-400 py-2">Nothing to show — all clear.</p> : (
+            <div className="space-y-1.5 max-h-[60vh] overflow-y-auto">
+              {detail.rows.map((r, i) => <p key={i} data-testid={`insight-row-${i}`} className="text-sm text-slate-700 border-b border-slate-100 py-1.5">{r}</p>)}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

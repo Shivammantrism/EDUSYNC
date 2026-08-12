@@ -40,11 +40,12 @@ export default function Fees() {
   const [form, setForm] = useState({ student_id: "", month: new Date().toISOString().slice(0, 7), due_date: new Date().toISOString().slice(0, 10), selected: {} });
   const [newComp, setNewComp] = useState({ name: "", amount: "" });
   const [paying, setPaying] = useState(null);
+  const [stats, setStats] = useState(null);
 
   const load = () => api.get("/fees").then((r) => setFees(r.data));
   useEffect(() => {
     load();
-    if (isPrincipal) { api.get("/students").then((r) => setStudents(r.data)); api.get("/fee-components").then((r) => setComponents(r.data)); }
+    if (isPrincipal) { api.get("/students").then((r) => setStudents(r.data)); api.get("/fee-components").then((r) => setComponents(r.data)); api.get("/fees/stats").then((r) => setStats(r.data)).catch(() => {}); }
   }, []);
 
   const selectedItems = () => components.filter((c) => form.selected[c.id]).map((c) => ({ name: c.name, amount: c.amount }));
@@ -159,6 +160,29 @@ export default function Fees() {
           </div>
         )
       } />
+
+      {isPrincipal && stats && stats.total > 0 && (
+        <div data-testid="fee-split-card" className="rounded-2xl border border-slate-200 bg-white p-5 mb-6 stat-card">
+          <div className="flex items-center justify-between mb-3">
+            <p className="font-semibold text-slate-800 font-heading flex items-center gap-2"><CreditCard className="h-4 w-4 text-violet-600" />Collections · Online vs Cash</p>
+            <span className="text-sm font-bold text-slate-700">{money(stats.total)} total</span>
+          </div>
+          <div className="flex h-3 w-full rounded-full overflow-hidden bg-slate-100">
+            <div className="bg-violet-500 h-full" style={{ width: `${stats.online_pct}%` }} />
+            <div className="bg-emerald-500 h-full" style={{ width: `${stats.cash_pct}%` }} />
+          </div>
+          <div className="grid grid-cols-2 gap-4 mt-3">
+            <div data-testid="fee-split-online">
+              <p className="text-xs text-slate-500 flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-violet-500" />UPI / Online ({stats.online_count})</p>
+              <p className="text-lg font-extrabold text-violet-700">{money(stats.online)} <span className="text-xs font-medium text-slate-400">{stats.online_pct}%</span></p>
+            </div>
+            <div data-testid="fee-split-cash">
+              <p className="text-xs text-slate-500 flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />Cash / Manual ({stats.cash_count})</p>
+              <p className="text-lg font-extrabold text-emerald-700">{money(stats.cash)} <span className="text-xs font-medium text-slate-400">{stats.cash_pct}%</span></p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Card className="border-slate-200 card-premium">
         {fees.length === 0 ? <Empty icon={Wallet} title="No fee records" /> : (

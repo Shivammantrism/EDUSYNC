@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import api, { formatErr } from "@/lib/api";
+import api, { formatErr, API } from "@/lib/api";
 import { PageHeader, Loader, Empty } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { GraduationCap, Plus, Users, Trash2, Printer, ArrowRightLeft } from "lucide-react";
+import { GraduationCap, Plus, Users, Trash2, Printer, ArrowRightLeft, CalendarDays } from "lucide-react";
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const CLASSES = ["Nursery", "LKG", "UKG", "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th", "10th", "11th", "12th"];
@@ -33,6 +33,12 @@ export default function Batches() {
     catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
   };
   const del = async (id) => { await api.delete(`/batches/${id}`); toast.success("Deleted"); load(); };
+  const downloadTT = (bid) => {
+    const token = localStorage.getItem("edusync_token");
+    fetch(`${API}/timetable/pdf?batch_id=${bid}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.blob()).then((b) => window.open(URL.createObjectURL(b)))
+      .catch(() => toast.error("Could not download timetable"));
+  };
 
   const openStudents = async (b) => {
     setViewBatch(b); setRoster(null);
@@ -114,6 +120,10 @@ export default function Batches() {
                   <Printer className="h-3.5 w-3.5" /> Print IDs
                 </button>
               </div>
+              <button data-testid={`batch-tt-${b.id}`} onClick={() => downloadTT(b.id)}
+                className="mt-2 w-full text-xs font-semibold text-emerald-600 border border-emerald-200 rounded-lg py-2 hover:bg-emerald-50 flex items-center justify-center gap-1.5 transition-colors">
+                <CalendarDays className="h-3.5 w-3.5" /> Timetable PDF
+              </button>
             </Card>
           ))}
         </div>
