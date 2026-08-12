@@ -130,6 +130,12 @@ All use `notify_parent_async` (WhatsApp-first via TWILIO_WHATSAPP_FROM → SMS f
 - **Urgent notice** → announcement with audience "teachers" SMS-blasts all teachers.
 - Verified: dispatch fires for every event (logs show Twilio sends). Delivery blocked only by the **trial Twilio account** (error 21608, unverified demo numbers) — real/verified numbers deliver; WhatsApp activates when TWILIO_WHATSAPP_FROM is set.
 
+## Implemented (2026-06, forked session, part 6) — Editable profiles + honest reminder
+- **Editable student profile**: PUT /students/{sid} (principal) + "Edit" button per student row → prefilled dialog (name, age, gender, class, parent name/phone/email, fee, photo, ID template). Verified.
+- **Editable teacher profile**: PUT /teachers/{tid} (principal) + "Edit" button per teacher row → prefilled dialog (name, email, phone, subjects, salary, leave balance; email-uniqueness enforced; password hidden in edit). Verified.
+- **Fee reminder** now uses `notify_parent` (WhatsApp→SMS) and returns an honest status: "sent via WHATSAPP/SMS", "No parent phone on file", or "Could not deliver — SMS provider rejected the number (trial accounts only send to verified numbers)". Replaces the misleading "check parent phone" message.
+- NOTE (reported issues): SMS not delivering + receipt not emailed are DATA/ACCOUNT limits, not bugs — trial Twilio account (error 21608) can't message unverified numbers, and demo students had no email on file (student form now captures parent/student email).
+
 ## Verification status (forked session)
 - Backend curl-verified: ID migration/continuation, quiz create/attempt scoring w/ negative marking, batch-auth 403, insights buckets (red=3/orange=15), auto-absent dedup flag, student AI summary, student report PDF, homework/exam notify hooks present.
 - Frontend compiles clean (only pre-existing html5-qrcode source-map + react-hooks/exhaustive-deps warnings).

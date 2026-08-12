@@ -645,6 +645,20 @@ async def create_student(body: StudentIn, user=Depends(require("principal"))):
     return out
 
 
+@api.put("/students/{sid}")
+async def update_student(sid: str, payload: dict, user=Depends(require("principal"))):
+    allowed = {"name", "age", "gender", "batch_id", "parent_name", "parent_phone", "parent_email", "monthly_fee", "photo_url", "template"}
+    upd = {k: v for k, v in payload.items() if k in allowed and v is not None}
+    if upd.get("age") not in (None, ""):
+        upd["age"] = int(upd["age"])
+    if upd.get("monthly_fee") not in (None, ""):
+        upd["monthly_fee"] = float(upd["monthly_fee"])
+    r = await db.students.update_one({"id": sid, "institute_id": user["institute_id"]}, {"$set": upd})
+    if r.matched_count == 0:
+        raise HTTPException(404, "Student not found")
+    return await db.students.find_one({"id": sid}, {"_id": 0, "password_hash": 0})
+
+
 @api.get("/students/{sid}")
 async def get_student(sid: str, user=Depends(get_current_user)):
     if user["role"] == "student" and user["id"] != sid:
@@ -713,6 +727,24 @@ async def create_teacher(body: TeacherIn, user=Depends(require("principal"))):
     doc.pop("password", None)
     await db.users.insert_one(doc)
     return await db.users.find_one({"id": uid}, {"_id": 0, "password_hash": 0})
+
+
+@api.put("/teachers/{tid}")
+async def update_teacher(tid: str, payload: dict, user=Depends(require("principal"))):
+    allowed = {"name", "phone", "subjects", "monthly_salary", "available_days", "leave_balance", "email"}
+    upd = {k: v for k, v in payload.items() if k in allowed and v is not None}
+    if upd.get("monthly_salary") not in (None, ""):
+        upd["monthly_salary"] = float(upd["monthly_salary"])
+    if upd.get("leave_balance") not in (None, ""):
+        upd["leave_balance"] = int(upd["leave_balance"])
+    if "email" in upd:
+        upd["email"] = str(upd["email"]).lower()
+        if await db.users.find_one({"email": upd["email"], "id": {"$ne": tid}}):
+            raise HTTPException(400, "Email already registered")
+    r = await db.users.update_one({"id": tid, "institute_id": user["institute_id"], "role": "teacher"}, {"$set": upd})
+    if r.matched_count == 0:
+        raise HTTPException(404, "Teacher not found")
+    return await db.users.find_one({"id": tid}, {"_id": 0, "password_hash": 0})
 
 
 @api.put("/teachers/{tid}")
@@ -1057,11 +1089,18 @@ async def send_fee_reminder(fee_id: str, user=Depends(require("principal"))):
     inst = await db.institutes.find_one({"id": user["institute_id"]})
     remaining = round(float(fee["amount"]) - float(fee.get("paid_amount", 0)), 2)
     msg = f"Dear Parent, fee of Rs.{remaining} for {fee.get('student_name')} ({fee.get('month')}) is due on {fee.get('due_date')}. Please pay at the earliest. - {inst['name'] if inst else 'EduSync'}"
-    sms_sent = send_sms(fee.get("parent_phone"), msg)
+    phone = fee.get("parent_phone")
+    channel = notify_parent(phone, msg)
     await db.fees.update_one({"id": fee_id}, {"$set": {"last_reminder": now_iso()}})
     await db.notifications.insert_one({"id": str(uuid.uuid4()), "institute_id": user["institute_id"],
                                        "type": "fee_reminder", "message": msg, "created_at": now_iso()})
-    return {"ok": True, "sms_sent": sms_sent, "message": "Reminder sent via SMS" if sms_sent else "Reminder logged (SMS not delivered — check parent phone)"}
+    if channel:
+        message = f"Reminder sent via {channel.upper()}"
+    elif not phone:
+        message = "No parent phone number on file for this student"
+    else:
+        message = "Could not deliver — SMS provider rejected the number (trial accounts only send to verified numbers)."
+    return {"ok": True, "sms_sent": bool(channel), "channel": channel, "message": message}
 
 
 # ---------------------------------------------------------------- exams & results

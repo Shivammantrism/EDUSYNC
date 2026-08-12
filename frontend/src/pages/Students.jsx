@@ -22,6 +22,7 @@ export default function Students() {
   const [sp] = useSearchParams();
   const clsParam = sp.get("class");
   const [open, setOpen] = useState(false);
+  const [editId, setEditId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const blank = { name: "", age: "", gender: "Male", batch_id: "", parent_name: "", parent_phone: "", parent_email: "", monthly_fee: 2000, photo_url: "", template: "classic", password: "student123" };
@@ -44,12 +45,14 @@ export default function Students() {
   const save = async () => {
     setSaving(true);
     try {
-      await api.post("/students", { ...form, age: Number(form.age), monthly_fee: Number(form.monthly_fee) });
-      toast.success("Student registered");
-      setOpen(false); setForm(blank); load();
+      const payload = { ...form, age: Number(form.age), monthly_fee: Number(form.monthly_fee) };
+      if (editId) { await api.put(`/students/${editId}`, payload); toast.success("Student updated"); }
+      else { await api.post("/students", payload); toast.success("Student registered"); }
+      setOpen(false); setForm(blank); setEditId(null); load();
     } catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
     finally { setSaving(false); }
   };
+  const openEdit = (s) => { setForm({ name: s.name || "", age: s.age || "", gender: s.gender || "Male", batch_id: s.batch_id || "", parent_name: s.parent_name || "", parent_phone: s.parent_phone || "", parent_email: s.parent_email || "", monthly_fee: s.monthly_fee || 0, photo_url: s.photo_url || "", template: s.template || "classic", password: "" }); setEditId(s.id); setOpen(true); };
 
   if (!students) return <Loader />;
   const filtered = students.filter((s) => (s.name.toLowerCase().includes(q.toLowerCase()) || s.student_id.toLowerCase().includes(q.toLowerCase())) && (!clsParam || s.batch_id === clsParam));
@@ -58,10 +61,10 @@ export default function Students() {
     <div>
       <PageHeader title="Students" subtitle={`${students.length} enrolled`} actions={
         user.role === "principal" && (
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild><Button data-testid="add-student-btn" className="btn-gradient"><UserPlus className="h-4 w-4 mr-2" />Register Student</Button></DialogTrigger>
+          <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setForm(blank); setEditId(null); } }}>
+            <DialogTrigger asChild><Button data-testid="add-student-btn" onClick={() => { setForm(blank); setEditId(null); }} className="btn-gradient"><UserPlus className="h-4 w-4 mr-2" />Register Student</Button></DialogTrigger>
             <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-              <DialogHeader><DialogTitle>Register New Student</DialogTitle></DialogHeader>
+              <DialogHeader><DialogTitle>{editId ? "Edit Student" : "Register New Student"}</DialogTitle></DialogHeader>
               <div className="space-y-3">
                 <div className="flex items-center gap-4">
                   <div className="h-20 w-20 rounded-xl bg-slate-100 overflow-hidden flex items-center justify-center border">
@@ -106,7 +109,7 @@ export default function Students() {
                 </div>
                 <p className="text-xs text-slate-400">Default login password: <span className="font-mono">student123</span></p>
               </div>
-              <DialogFooter><Button data-testid="save-student-btn" onClick={save} disabled={saving || !form.name} className="btn-gradient">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Register"}</Button></DialogFooter>
+              <DialogFooter><Button data-testid="save-student-btn" onClick={save} disabled={saving || !form.name} className="btn-gradient">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : (editId ? "Save Changes" : "Register")}</Button></DialogFooter>
             </DialogContent>
           </Dialog>
         )
@@ -119,7 +122,7 @@ export default function Students() {
         </div>
         {filtered.length === 0 ? <Empty icon={Users} title="No students found" /> : (
           <Table>
-            <TableHeader><TableRow><TableHead>Student</TableHead><TableHead>Student ID</TableHead><TableHead>Age</TableHead><TableHead>Parent Phone</TableHead><TableHead className="text-right">Fee</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>Student</TableHead><TableHead>Student ID</TableHead><TableHead>Age</TableHead><TableHead>Parent Phone</TableHead><TableHead className="text-right">Fee</TableHead><TableHead></TableHead></TableRow></TableHeader>
             <TableBody>
               {filtered.map((s) => (
                 <TableRow key={s.id} data-testid={`student-row-${s.id}`} className="cursor-pointer hover:bg-slate-50" onClick={() => navigate(`/app/students/${s.id}`)}>
@@ -133,6 +136,7 @@ export default function Students() {
                   <TableCell>{s.age}</TableCell>
                   <TableCell className="text-slate-500">{s.parent_phone}</TableCell>
                   <TableCell className="text-right">₹{s.monthly_fee}</TableCell>
+                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>{user.role === "principal" && <button data-testid={`edit-student-${s.id}`} onClick={() => openEdit(s)} className="text-xs font-semibold text-blue-600 hover:underline">Edit</button>}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

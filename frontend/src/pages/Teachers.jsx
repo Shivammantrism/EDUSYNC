@@ -18,16 +18,22 @@ export default function Teachers() {
   const [open, setOpen] = useState(false);
   const [idCardFor, setIdCardFor] = useState(null);
   const [form, setForm] = useState({ name: "", email: "", password: "teacher123", phone: "", subjects: "", monthly_salary: 30000 });
+  const [editId, setEditId] = useState(null);
 
   const load = () => api.get("/teachers").then((r) => setTeachers(r.data));
   useEffect(() => { load(); }, []);
 
+  const blankT = { name: "", email: "", password: "teacher123", phone: "", subjects: "", monthly_salary: 30000, leave_balance: 12 };
+  const reset = () => { setForm(blankT); setEditId(null); };
   const save = async () => {
+    const payload = { name: form.name, email: form.email, phone: form.phone, monthly_salary: Number(form.monthly_salary), subjects: form.subjects.split(",").map((s) => s.trim()).filter(Boolean), available_days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"], leave_balance: Number(form.leave_balance ?? 12) };
     try {
-      await api.post("/teachers", { ...form, monthly_salary: Number(form.monthly_salary), subjects: form.subjects.split(",").map((s) => s.trim()).filter(Boolean), available_days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"] });
-      toast.success("Teacher added"); setOpen(false); setForm({ name: "", email: "", password: "teacher123", phone: "", subjects: "", monthly_salary: 30000 }); load();
+      if (editId) { await api.put(`/teachers/${editId}`, payload); toast.success("Teacher updated"); }
+      else { await api.post("/teachers", { ...payload, password: form.password }); toast.success("Teacher added"); }
+      setOpen(false); reset(); load();
     } catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
   };
+  const openEdit = (t) => { setForm({ name: t.name || "", email: t.email || "", password: "", phone: t.phone || "", subjects: (t.subjects || []).join(", "), monthly_salary: t.monthly_salary || 0, leave_balance: t.leave_balance ?? 12 }); setEditId(t.id); setOpen(true); };
   const del = async (id) => { await api.delete(`/teachers/${id}`); toast.success("Removed"); load(); };
 
   if (!teachers) return <Loader />;
@@ -41,14 +47,14 @@ export default function Teachers() {
             <div className="space-y-3">
               <div><Label>Name</Label><Input data-testid="teacher-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
               <div><Label>Email</Label><Input data-testid="teacher-email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
-              <div><Label>Password</Label><Input data-testid="teacher-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></div>
+              {!editId && <div><Label>Password</Label><Input data-testid="teacher-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></div>}
               <div className="grid grid-cols-2 gap-3">
                 <div><Label>Phone</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
                 <div><Label>Monthly Salary (₹)</Label><Input type="number" value={form.monthly_salary} onChange={(e) => setForm({ ...form, monthly_salary: e.target.value })} /></div>
               </div>
               <div><Label>Subjects (comma separated)</Label><Input value={form.subjects} onChange={(e) => setForm({ ...form, subjects: e.target.value })} placeholder="Maths, Physics" /></div>
             </div>
-            <DialogFooter><Button data-testid="save-teacher-btn" onClick={save} disabled={!form.name || !form.email} className="btn-gradient">Add Teacher</Button></DialogFooter>
+            <DialogFooter><Button data-testid="save-teacher-btn" onClick={save} disabled={!form.name || !form.email} className="btn-gradient">{editId ? "Save Changes" : "Add Teacher"}</Button></DialogFooter>
           </DialogContent>
         </Dialog>
       } />
@@ -68,6 +74,7 @@ export default function Teachers() {
                   <TableCell>{t.leave_balance ?? 12}d</TableCell>
                   <TableCell>
                     <div className="flex items-center justify-end gap-2">
+                      <button data-testid={`edit-teacher-${t.id}`} onClick={() => openEdit(t)} className="text-xs font-semibold text-blue-600 hover:underline mr-1">Edit</button>
                       <button data-testid={`view-id-${t.id}`} onClick={() => setIdCardFor(t)} className="text-slate-300 hover:text-violet-600" title="View ID card"><IdCard className="h-4 w-4" /></button>
                       <button data-testid={`del-teacher-${t.id}`} onClick={() => del(t.id)} className="text-slate-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
                     </div>
