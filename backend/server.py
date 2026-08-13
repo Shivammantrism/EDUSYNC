@@ -58,6 +58,11 @@ api = APIRouter(prefix="/api")
 bearer = HTTPBearer(auto_error=False)
 
 
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
