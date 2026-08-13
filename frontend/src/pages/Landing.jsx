@@ -133,6 +133,10 @@ export default function Landing() {
           {" · "}
           <a data-testid="terms-link" href="/terms" className="underline hover:text-emerald-700">Terms of Service</a>
         </p>
+        <div data-testid="grievance-officer" className="mt-3 text-center text-[11px] leading-relaxed text-slate-400 border-t border-slate-100 pt-3">
+          <p className="font-semibold text-slate-500">Grievance Officer (DPDP Act, 2023)</p>
+          <p>Shivam Mantri · <a href="mailto:founder@privamsolutions.in" className="underline hover:text-emerald-700">founder@privamsolutions.in</a></p>
+        </div>
       </motion.div>
 
       <Dialog open={fp.open} onOpenChange={(v) => setFp((s) => ({ ...s, open: v }))}>

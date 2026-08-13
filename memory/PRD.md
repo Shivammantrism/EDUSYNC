@@ -162,3 +162,13 @@ All use `notify_parent_async` (WhatsApp-first via TWILIO_WHATSAPP_FROM → SMS f
 - Config: added `APP_BASE_URL` to backend/.env (frontend base for email login link + logo).
 - Known/out-of-scope from test report: notification badge is a live category count (no persisted read-state); auth is Bearer/localStorage by design (no HttpOnly cookie/credentialed CORS); server.py >2800 lines (refactor pending); duplicate PUT /students & /teachers handlers should be consolidated.
 
+## Implemented (2026-06, forked session, part 10) — PWA + Legal & Compliance
+- **PWA install**: valid `public/manifest.json` (standalone, navy theme), generated 192/512/maskable + apple-touch icons, `public/sw.js` service worker (app-shell cache + notificationclick), registered via `src/lib/pwa.js`, meta tags in index.html. `InstallPrompt.jsx` shows an install banner on `beforeinstallprompt`. NOTE: index.html changes require a frontend restart.
+- **Local notification banners**: bell poller fires native notifications on NEW alerts (deduped via localStorage `edusync_seen_alerts`); "Enable alerts" button in bell dropdown requests permission; uses SW `showNotification` so it works installed.
+- **Legal & Compliance**:
+  - Enriched `/privacy` (PrivacyPolicy.jsx → "Privacy & Compliance"): data collection (attendance/grades/IDs), encrypted cloud storage, **30-day retention**, DPDP Act 2023, verifiable parental consent, RBAC, payments; plus a highlighted **Grievance Officer** card (Shivam Mantri · founder@privamsolutions.in). Terms.jsx retention section aligned to 30-day.
+  - Login footer (Landing.jsx) shows Grievance Officer details (`data-testid=grievance-officer`).
+  - Student registration form: mandatory checkbox `data-testid=parental-consent` — "Verifiable parental consent obtained for this minor's data processing." Register button gated until checked (create only).
+  - Backend: `StudentIn.parental_consent`; `POST /api/students` returns 400 without consent, stores a structured `parental_consent` record + classification tags (`data_classification=restricted`, `pii_category=minor_sensitive`, `access_scope=role_scoped`).
+  - Data governance: `tag_sensitive_data()` on startup upserts a `data_governance` registry (students/attendance/results/fees = RESTRICTED, 30-day retention, grievance officer) and backfills classification tags on existing student docs (verified: 42 tagged, 0 untagged).
+

@@ -364,6 +364,7 @@ class StudentIn(BaseModel):
     password: Optional[str] = "student123"
     monthly_fee: float = Field(default=0, ge=0)
     template: Optional[str] = "classic"
+    parental_consent: Optional[bool] = False
 
 
 class BatchIn(BaseModel):
@@ -710,6 +711,8 @@ async def list_students(user=Depends(require("principal", "teacher")), batch_id:
 
 @api.post("/students")
 async def create_student(body: StudentIn, user=Depends(require("principal", "teacher"))):
+    if not body.parental_consent:
+        raise HTTPException(400, "Verifiable parental consent is required to register a minor's data.")
     inst = await db.institutes.find_one({"id": user["institute_id"]})
     prefix = inst_prefix(inst)
     if not inst.get("code"):
@@ -721,7 +724,11 @@ async def create_student(body: StudentIn, user=Depends(require("principal", "tea
     doc = body.model_dump()
     doc.update({"id": sid, "student_id": student_id, "institute_id": user["institute_id"],
                 "password_hash": hash_pw(temp_password), "documents": [],
-                "created_at": now_iso(), "join_month": datetime.now().strftime("%Y-%m")})
+                "created_at": now_iso(), "join_month": datetime.now().strftime("%Y-%m"),
+                "data_classification": "restricted", "pii_category": "minor_sensitive", "access_scope": "role_scoped",
+                "parental_consent": {"obtained": True,
+                                     "statement": "Verifiable parental consent obtained for this minor's data processing.",
+                                     "recorded_by": user["id"], "recorded_at": now_iso()}})
     doc.pop("password", None)
     await db.students.insert_one(doc)
     recipients = list({r for r in [doc.get("email"), doc.get("parent_email")] if r})
@@ -2642,6 +2649,30 @@ async def update_institute(payload: dict, user=Depends(require("principal"))):
     return await db.institutes.find_one({"id": user["institute_id"]}, {"_id": 0})
 
 
+async def tag_sensitive_data():
+    """Logically tag student PII collections for high-security, role-scoped access control (DPDP Act)."""
+    await db.data_governance.update_one(
+        {"id": "student-pii"},
+        {"$set": {
+            "id": "student-pii",
+            "collections": ["students", "attendance", "results", "fees"],
+            "classification": "RESTRICTED",
+            "pii_category": "minor_sensitive",
+            "access_control": "role_scoped_per_institute",
+            "legal_basis": "DPDP Act 2023 — verifiable parental consent",
+            "encryption": "encrypted cloud storage (at-rest & in-transit)",
+            "retention_days": 30,
+            "grievance_officer": {"name": "Shivam Mantri", "email": "founder@privamsolutions.in"},
+            "updated_at": now_iso(),
+        }},
+        upsert=True,
+    )
+    await db.students.update_many(
+        {"data_classification": {"$exists": False}},
+        {"$set": {"data_classification": "restricted", "pii_category": "minor_sensitive", "access_scope": "role_scoped"}},
+    )
+
+
 # ---------------------------------------------------------------- seed
 async def seed():
     await db.users.create_index("email")
@@ -2832,6 +2863,10 @@ async def startup():
         await migrate_ids()
     except Exception as e:
         logger.error(f"ID migration failed: {e}")
+    try:
+        await tag_sensitive_data()
+    except Exception as e:
+        logger.error(f"Data governance tagging failed: {e}")
 
 
 @app.on_event("shutdown")
