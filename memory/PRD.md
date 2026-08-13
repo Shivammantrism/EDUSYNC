@@ -172,3 +172,9 @@ All use `notify_parent_async` (WhatsApp-first via TWILIO_WHATSAPP_FROM → SMS f
   - Backend: `StudentIn.parental_consent`; `POST /api/students` returns 400 without consent, stores a structured `parental_consent` record + classification tags (`data_classification=restricted`, `pii_category=minor_sensitive`, `access_scope=role_scoped`).
   - Data governance: `tag_sensitive_data()` on startup upserts a `data_governance` registry (students/attendance/results/fees = RESTRICTED, 30-day retention, grievance officer) and backfills classification tags on existing student docs (verified: 42 tagged, 0 untagged).
 
+## Code review + Deployment readiness (2026-06, forked session, part 11)
+- Applied safe code-review fixes: OTP now uses `secrets.randbelow` (server.py forgot-password); removed hardcoded default passwords ("teacher123"/"student123") from Teachers.jsx/Students.jsx form state; stable React key for notification items; console.debug on pwa.js fallback catches.
+- Declined (with rationale): localStorage→httpOnly cookies (deliberate JWT-Bearer architecture); large-function refactors (generate_timetable/create_salary — working code, regression risk); exhaustive-deps on run-once useEffects (infinite-loop risk); `is None` is correct idiom (no bug).
+- Performance: removed two N+1 query patterns — GET /api/batches (student counts via `$group` aggregation + bulk teacher lookup) and GET /api/homework (submission counts via `$group` + bulk my-submissions fetch). Both verified returning correct data.
+- **Deployment health check: PASS** (deployment_agent, zero findings). Compilation OK, env-only URLs/secrets, CORS ok, supervisor valid, no unoptimized queries. App is deployment-ready.
+

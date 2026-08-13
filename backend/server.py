@@ -965,10 +965,16 @@ async def list_batches(user=Depends(get_current_user)):
         s = await db.students.find_one({"id": user["id"]})
         q["id"] = s.get("batch_id", "")
     batches = await db.batches.find(q, {"_id": 0}).to_list(1000)
+    batch_ids = [b["id"] for b in batches]
+    counts = {}
+    async for row in db.students.aggregate([{"$match": {"batch_id": {"$in": batch_ids}}},
+                                            {"$group": {"_id": "$batch_id", "n": {"$sum": 1}}}]):
+        counts[row["_id"]] = row["n"]
+    teacher_ids = [b.get("teacher_id") for b in batches if b.get("teacher_id")]
+    teachers = {t["id"]: t["name"] async for t in db.users.find({"id": {"$in": teacher_ids}}, {"_id": 0, "id": 1, "name": 1})}
     for b in batches:
-        b["student_count"] = await db.students.count_documents({"batch_id": b["id"]})
-        t = await db.users.find_one({"id": b.get("teacher_id")}, {"_id": 0, "name": 1})
-        b["teacher_name"] = t["name"] if t else "Unassigned"
+        b["student_count"] = counts.get(b["id"], 0)
+        b["teacher_name"] = teachers.get(b.get("teacher_id"), "Unassigned")
     return batches
 
 
@@ -1381,11 +1387,19 @@ async def list_homework(user=Depends(get_current_user)):
         batches = await db.batches.find({"institute_id": user["institute_id"], "teacher_id": user["id"]}, {"id": 1, "_id": 0}).to_list(1000)
         q["batch_id"] = {"$in": [b["id"] for b in batches]}
     hw = await db.homework.find(q, {"_id": 0}).sort("deadline", -1).to_list(1000)
+    hw_ids = [h["id"] for h in hw]
+    counts = {}
+    async for row in db.submissions.aggregate([{"$match": {"homework_id": {"$in": hw_ids}}},
+                                               {"$group": {"_id": "$homework_id", "n": {"$sum": 1}}}]):
+        counts[row["_id"]] = row["n"]
+    my_subs = {}
+    if user["role"] == "student":
+        async for sub in db.submissions.find({"homework_id": {"$in": hw_ids}, "student_id": user["id"]}, {"_id": 0}):
+            my_subs[sub["homework_id"]] = sub
     for h in hw:
-        h["submission_count"] = await db.submissions.count_documents({"homework_id": h["id"]})
+        h["submission_count"] = counts.get(h["id"], 0)
         if user["role"] == "student":
-            sub = await db.submissions.find_one({"homework_id": h["id"], "student_id": user["id"]}, {"_id": 0})
-            h["my_submission"] = sub
+            h["my_submission"] = my_subs.get(h["id"])
     return hw
 
 
