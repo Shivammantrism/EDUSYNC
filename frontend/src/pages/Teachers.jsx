@@ -18,14 +18,14 @@ export default function Teachers() {
   const [teachers, setTeachers] = useState(null);
   const [open, setOpen] = useState(false);
   const [idCardFor, setIdCardFor] = useState(null);
-  const [form, setForm] = useState({ name: "", email: "", password: "teacher123", phone: "", subjects: "", monthly_salary: 30000 });
+  const [form, setForm] = useState({ name: "", email: "", password: "", phone: "", subjects: "", monthly_salary: 30000 });
   const [editId, setEditId] = useState(null);
   const [credResult, setCredResult] = useState(null);
 
   const load = () => api.get("/teachers").then((r) => setTeachers(r.data));
   useEffect(() => { load(); }, []);
 
-  const blankT = { name: "", email: "", password: "teacher123", phone: "", subjects: "", monthly_salary: 30000, leave_balance: 12 };
+  const blankT = { name: "", email: "", password: "", phone: "", subjects: "", monthly_salary: 30000, leave_balance: 12 };
   const reset = () => { setForm(blankT); setEditId(null); };
   const save = async () => {
     const payload = { name: form.name, email: form.email, phone: form.phone, monthly_salary: Number(form.monthly_salary), subjects: form.subjects.split(",").map((s) => s.trim()).filter(Boolean), available_days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"], leave_balance: Number(form.leave_balance ?? 12) };

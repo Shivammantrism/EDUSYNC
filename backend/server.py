@@ -2571,7 +2571,7 @@ async def forgot_password(body: ForgotReq):
     email = body.email.lower()
     user = await db.users.find_one({"email": email})
     if user:
-        otp = f"{random.randint(100000, 999999)}"
+        otp = f"{secrets.randbelow(900000) + 100000}"
         await db.password_resets.update_one({"email": email}, {"$set": {"email": email, "otp": otp,
             "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat(), "used": False}}, upsert=True)
         html = f"<div style='font-family:Arial,sans-serif'><h2 style='color:#2563eb'>EduSync Password Reset</h2><p>Hi {user['name']},</p><p>Your one-time password (OTP) is:</p><p style='font-size:30px;font-weight:bold;letter-spacing:8px;color:#0f172a'>{otp}</p><p>This code expires in 15 minutes. If you didn't request this, please ignore.</p><p style='color:#64748b;font-size:12px'>- EduSync by Privam Solutions</p></div>"

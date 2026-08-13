@@ -27,7 +27,7 @@ export default function Students() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [credResult, setCredResult] = useState(null);
-  const blank = { name: "", age: "", gender: "Male", batch_id: "", email: "", parent_name: "", parent_phone: "", parent_email: "", monthly_fee: 2000, photo_url: "", template: "classic", password: "student123", parental_consent: false };
+  const blank = { name: "", age: "", gender: "Male", batch_id: "", email: "", parent_name: "", parent_phone: "", parent_email: "", monthly_fee: 2000, photo_url: "", template: "classic", password: "", parental_consent: false };
   const [form, setForm] = useState(blank);
 
   const load = () => api.get("/students").then((r) => setStudents(r.data));

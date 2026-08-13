@@ -111,7 +111,7 @@ function NotificationBell() {
                   const meta = NOTIF_META[it.type] || NOTIF_META.notice;
                   const Icon = meta.Icon;
                   return (
-                    <div key={i} data-testid={`notification-item-${i}`}
+                    <div key={`${it.type}-${it.title}-${i}`} data-testid={`notification-item-${i}`}
                       className="px-4 py-3 flex items-start gap-3 hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0">
                       <span className="h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0"
                         style={{ background: meta.color + "1a", color: meta.color }}>

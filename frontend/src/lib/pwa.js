@@ -31,12 +31,12 @@ export async function showLocalNotification(title, body) {
       await reg.showNotification(title, opts);
       return;
     }
-  } catch {
-    /* fall through to page notification */
+  } catch (err) {
+    console.debug("SW notification unavailable, falling back to page notification:", err);
   }
   try {
     new Notification(title, opts);
-  } catch {
-    /* ignore */
+  } catch (err) {
+    console.debug("Page notification failed:", err);
   }
 }
