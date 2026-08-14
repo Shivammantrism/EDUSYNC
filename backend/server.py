@@ -437,6 +437,11 @@ class SuperAdminUserIn(BaseModel):
     status: Optional[str] = "active"
 
 
+class ChangePwIn(BaseModel):
+    current_password: Optional[str] = ""
+    new_password: str
+
+
 class TeacherIn(BaseModel):
     name: str
     email: EmailStr
@@ -729,7 +734,8 @@ async def login(body: LoginReq):
     inst = await db.institutes.find_one({"id": user.get("institute_id")}, {"_id": 0})
     return {"access_token": token, "otp_required": False, "user": {"id": user["id"], "name": user["name"], "role": role,
             "institute_id": user.get("institute_id"), "institute_name": inst["name"] if inst else "",
-            "student_id": user.get("student_id"), "email": user.get("email")}}
+            "student_id": user.get("student_id"), "email": user.get("email"),
+            "must_change_password": bool(user.get("must_change_password"))}}
 
 
 @api.post("/auth/verify-otp")
@@ -755,7 +761,24 @@ async def verify_otp(body: OtpVerify):
     inst = await db.institutes.find_one({"id": user.get("institute_id")}, {"_id": 0})
     return {"access_token": token, "user": {"id": user["id"], "name": user["name"], "role": role,
             "institute_id": user.get("institute_id"), "institute_name": inst["name"] if inst else "",
-            "student_id": user.get("student_id"), "email": user.get("email")}}
+            "student_id": user.get("student_id"), "email": user.get("email"),
+            "must_change_password": bool(user.get("must_change_password"))}}
+
+
+@api.post("/auth/change-password")
+async def change_password(body: ChangePwIn, user=Depends(get_current_user)):
+    if len(body.new_password) < 6:
+        raise HTTPException(400, "New password must be at least 6 characters")
+    coll = db.students if user["role"] == "student" else db.users
+    doc = await coll.find_one({"id": user["id"]})
+    if not doc:
+        raise HTTPException(404, "User not found")
+    forced = bool(doc.get("must_change_password"))
+    if not forced or body.current_password:
+        if not verify_pw(body.current_password or "", doc.get("password_hash", "")):
+            raise HTTPException(400, "Current password is incorrect")
+    await coll.update_one({"id": user["id"]}, {"$set": {"password_hash": hash_pw(body.new_password), "must_change_password": False}})
+    return {"ok": True}
 
 
 @api.get("/auth/me")
@@ -804,7 +827,7 @@ async def sa_create_user(body: SuperAdminUserIn, user=Depends(require_super_admi
     await db.users.insert_one({"id": uid, "email": email, "name": body.name,
         "role": body.role or "teacher", "institute_id": body.institute_id or None,
         "status": body.status or "active", "password_hash": hash_pw(body.password or gen_temp_password()),
-        "created_at": now_iso()})
+        "must_change_password": True, "created_at": now_iso()})
     return await db.users.find_one({"id": uid}, {"_id": 0, "password_hash": 0})
 
 
@@ -1009,6 +1032,7 @@ async def create_student(body: StudentIn, user=Depends(require("principal", "tea
     doc.update({"id": sid, "student_id": student_id, "institute_id": user["institute_id"],
                 "password_hash": hash_pw(temp_password), "documents": [],
                 "created_at": now_iso(), "join_month": datetime.now().strftime("%Y-%m"),
+                "must_change_password": True,
                 "data_classification": "restricted", "pii_category": "minor_sensitive", "access_scope": "role_scoped",
                 "parental_consent": {"obtained": True,
                                      "statement": "Verifiable parental consent obtained for this minor's data processing.",
@@ -1036,7 +1060,7 @@ async def resend_student_credentials(sid: str, user=Depends(require("principal",
         raise HTTPException(403, "Forbidden")
     inst = await db.institutes.find_one({"id": user["institute_id"]})
     temp_password = gen_temp_password()
-    await db.students.update_one({"id": sid}, {"$set": {"password_hash": hash_pw(temp_password)}})
+    await db.students.update_one({"id": sid}, {"$set": {"password_hash": hash_pw(temp_password), "must_change_password": True}})
     recipients = list({r for r in [s.get("email"), s.get("parent_email")] if r})
     email_sent = False
     for r in recipients:
@@ -1179,7 +1203,8 @@ async def create_teacher(body: TeacherIn, user=Depends(require("principal"))):
     temp_password = gen_temp_password()
     doc = body.model_dump()
     doc.update({"id": uid, "email": email, "password_hash": hash_pw(temp_password), "role": "teacher",
-                "faculty_id": faculty_id, "institute_id": user["institute_id"], "created_at": now_iso()})
+                "faculty_id": faculty_id, "institute_id": user["institute_id"], "created_at": now_iso(),
+                "must_change_password": True})
     doc.pop("password", None)
     await db.users.insert_one(doc)
     email_sent = await send_welcome_email(email, inst, doc.get("name", "Teacher"), "Teacher", email, temp_password, id_label="Login Email")
@@ -1197,7 +1222,7 @@ async def resend_teacher_credentials(tid: str, user=Depends(require("principal")
         raise HTTPException(404, "Teacher not found")
     inst = await db.institutes.find_one({"id": user["institute_id"]})
     temp_password = gen_temp_password()
-    await db.users.update_one({"id": tid}, {"$set": {"password_hash": hash_pw(temp_password)}})
+    await db.users.update_one({"id": tid}, {"$set": {"password_hash": hash_pw(temp_password), "must_change_password": True}})
     email = t.get("email")
     email_sent = await send_welcome_email(email, inst, t.get("name", "Teacher"), "Teacher", email, temp_password, id_label="Login Email")
     return {"faculty_id": t.get("faculty_id"), "email": email, "name": t.get("name"),

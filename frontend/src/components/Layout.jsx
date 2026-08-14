@@ -10,7 +10,7 @@ import {
   LayoutDashboard, Users, GraduationCap, CalendarCheck, Wallet, FileText,
   BookOpen, Megaphone, MessageSquareWarning, UserPlus, CalendarDays, Banknote,
   LogOut, Menu, X, PlaneTakeoff, IdCard, Settings, ListChecks, Images,
-  Bell, Wallet as WalletIcon, UserX, Megaphone as MegaphoneIcon, UserPlus as UserPlusIcon, PlaneTakeoff as PlaneIcon,
+  Bell, KeyRound, Wallet as WalletIcon, UserX, Megaphone as MegaphoneIcon, UserPlus as UserPlusIcon, PlaneTakeoff as PlaneIcon,
 } from "lucide-react";
 
 const NOTIF_META = {
@@ -150,6 +150,7 @@ const NAV = {
     ["/app/enquiries", "Admission Enquiries", UserPlus, "enquiries"],
     ["/app/gallery", "Photo Gallery", Images, "gallery"],
     ["/app/settings", "Institute Branding", Settings, "settings"],
+    ["/app/change-password", "Change Password", KeyRound, "settings"],
   ],
   teacher: [
     ["/app/dashboard", "Dashboard", LayoutDashboard, "dashboard"],
@@ -164,6 +165,7 @@ const NAV = {
     ["/app/announcements", "Announcements", Megaphone, "announcements"],
     ["/app/complaints", "Complaints", MessageSquareWarning, "complaints"],
     ["/app/gallery", "Photo Gallery", Images, "gallery"],
+    ["/app/change-password", "Change Password", KeyRound, "settings"],
   ],
   student: [
     ["/app/dashboard", "Dashboard", LayoutDashboard, "dashboard"],
@@ -177,6 +179,7 @@ const NAV = {
     ["/app/announcements", "Announcements", Megaphone, "announcements"],
     ["/app/complaints", "Complaints", MessageSquareWarning, "complaints"],
     ["/app/gallery", "Photo Gallery", Images, "gallery"],
+    ["/app/change-password", "Change Password", KeyRound, "settings"],
   ],
 };
 

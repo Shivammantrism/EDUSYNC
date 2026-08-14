@@ -1,5 +1,5 @@
 import "@/App.css";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
 import Layout from "@/components/Layout";
@@ -28,12 +28,16 @@ import Gallery from "@/pages/Gallery";
 import PrivacyPolicy from "@/pages/PrivacyPolicy";
 import Terms from "@/pages/Terms";
 import SuperAdmin from "@/pages/SuperAdmin";
+import ChangePassword from "@/pages/ChangePassword";
 import { Loader } from "@/components/common";
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
+  const loc = useLocation();
   if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader /></div>;
   if (!user) return <Navigate to="/" replace />;
+  if (user.must_change_password && loc.pathname !== "/app/change-password")
+    return <Navigate to="/app/change-password" replace />;
   return children;
 }
 
@@ -85,6 +89,7 @@ function App() {
               <Route path="print-ids/:batchId" element={<BulkIDCards />} />
               <Route path="faculty-ids" element={<FacultyIDCards />} />
               <Route path="gallery" element={<Gallery />} />
+              <Route path="change-password" element={<ChangePassword />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
