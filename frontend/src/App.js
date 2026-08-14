@@ -27,6 +27,7 @@ import Quizzes from "@/pages/Quizzes";
 import Gallery from "@/pages/Gallery";
 import PrivacyPolicy from "@/pages/PrivacyPolicy";
 import Terms from "@/pages/Terms";
+import SuperAdmin from "@/pages/SuperAdmin";
 import { Loader } from "@/components/common";
 
 function Protected({ children }) {
@@ -39,7 +40,15 @@ function Protected({ children }) {
 function Public({ children }) {
   const { user, loading } = useAuth();
   if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader /></div>;
-  if (user) return <Navigate to="/app/dashboard" replace />;
+  if (user) return <Navigate to={user.role === "super_admin" ? "/super-admin" : "/app/dashboard"} replace />;
+  return children;
+}
+
+function SuperAdminGate({ children }) {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader /></div>;
+  if (!user) return <Navigate to="/" replace />;
+  if (user.role !== "super_admin" && user.email !== "founder@privamsolutions.in") return <Navigate to="/app/dashboard" replace />;
   return children;
 }
 
@@ -52,6 +61,7 @@ function App() {
             <Route path="/" element={<Public><Landing /></Public>} />
             <Route path="/privacy" element={<PrivacyPolicy />} />
             <Route path="/terms" element={<Terms />} />
+            <Route path="/super-admin" element={<SuperAdminGate><SuperAdmin /></SuperAdminGate>} />
             <Route path="/app" element={<Protected><Layout /></Protected>}>
               <Route index element={<Navigate to="/app/dashboard" replace />} />
               <Route path="dashboard" element={<Dashboard />} />

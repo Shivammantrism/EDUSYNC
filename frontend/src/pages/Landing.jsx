@@ -8,20 +8,49 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Eye, EyeOff, ArrowRight, Loader2 } from "lucide-react";
+import { Eye, EyeOff, ArrowRight, Loader2, ShieldCheck, ArrowLeft } from "lucide-react";
 
 const LOGO = "/edusync-watermark.png";
+const BTN = "linear-gradient(120deg,#1e3a8a 0%,#0e7490 52%,#059669 100%)";
 
 export default function Landing() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [view, setView] = useState("login"); // login | register
   const [showPw, setShowPw] = useState(false);
-  const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [step, setStep] = useState("login"); // login | otp
   const [li, setLi] = useState({ identifier: "", password: "" });
-  const [reg, setReg] = useState({ institute_name: "", principal_name: "", email: "", password: "" });
+  const [otp, setOtp] = useState("");
+  const [hint, setHint] = useState("");
   const [fp, setFp] = useState({ open: false, step: 1, email: "", otp: "", new_password: "", loading: false });
+
+  const finish = (data) => {
+    login(data.access_token, data.user);
+    toast.success(`Welcome back, ${data.user.name}`);
+    navigate(data.user.role === "super_admin" ? "/super-admin" : "/app/dashboard");
+  };
+
+  const doLogin = async (e) => {
+    e.preventDefault(); setLoading(true);
+    try {
+      const { data } = await api.post("/auth/login", li);
+      if (data.otp_required) { setHint(data.email_hint || ""); setStep("otp"); toast.success("We emailed you a 6-digit code."); }
+      else finish(data);
+    } catch (err) { toast.error(formatErr(err.response?.data?.detail)); }
+    finally { setLoading(false); }
+  };
+  const doVerify = async (e) => {
+    e.preventDefault(); setLoading(true);
+    try {
+      const { data } = await api.post("/auth/verify-otp", { identifier: li.identifier, otp });
+      finish(data);
+    } catch (err) { toast.error(formatErr(err.response?.data?.detail)); }
+    finally { setLoading(false); }
+  };
+  const resend = async () => {
+    try { await api.post("/auth/login", li); toast.success("A new code has been sent."); }
+    catch (err) { toast.error(formatErr(err.response?.data?.detail)); }
+  };
 
   const sendOtp = async () => {
     setFp((s) => ({ ...s, loading: true }));
@@ -33,33 +62,10 @@ export default function Landing() {
     try { await api.post("/auth/reset-password", { email: fp.email, otp: fp.otp, new_password: fp.new_password }); toast.success("Password reset! Please sign in."); setFp({ open: false, step: 1, email: "", otp: "", new_password: "", loading: false }); }
     catch (e) { toast.error(formatErr(e.response?.data?.detail)); setFp((s) => ({ ...s, loading: false })); }
   };
-  const doLogin = async (e) => {
-    e.preventDefault(); setLoading(true);
-    try {
-      const { data } = await api.post("/auth/login", li);
-      login(data.access_token, data.user);
-      toast.success(`Welcome back, ${data.user.name}`);
-      navigate("/app/dashboard");
-    } catch (err) { toast.error(formatErr(err.response?.data?.detail)); }
-    finally { setLoading(false); }
-  };
-  const doRegister = async (e) => {
-    e.preventDefault(); setLoading(true);
-    try {
-      const { data } = await api.post("/auth/register-institute", reg);
-      login(data.access_token, data.user);
-      toast.success("Institute created! Welcome to EduSync.");
-      navigate("/app/dashboard");
-    } catch (err) { toast.error(formatErr(err.response?.data?.detail)); }
-    finally { setLoading(false); }
-  };
-
-  const BTN = "linear-gradient(120deg,#1e3a8a 0%,#0e7490 52%,#059669 100%)";
 
   return (
     <div className="relative min-h-screen w-full flex items-center justify-center px-5 py-10 overflow-hidden"
       style={{ background: "linear-gradient(140deg,#0a1f4d 0%,#0b3b4a 48%,#064e3b 100%)" }}>
-      {/* subtle depth accents */}
       <div className="pointer-events-none absolute -top-32 -left-24 h-96 w-96 rounded-full" style={{ background: "radial-gradient(circle, rgba(37,99,235,0.35), transparent 70%)" }} />
       <div className="pointer-events-none absolute -bottom-40 -right-24 h-[28rem] w-[28rem] rounded-full" style={{ background: "radial-gradient(circle, rgba(16,185,129,0.30), transparent 70%)" }} />
 
@@ -71,15 +77,15 @@ export default function Landing() {
           </div>
           <p className="text-xl font-extrabold font-heading text-slate-900 leading-none">EduSync</p>
           <p className="text-[11px] text-slate-400 mt-1">by Privam Solutions</p>
-          <h2 className="text-2xl font-extrabold font-heading text-slate-900 mt-5">{view === "login" ? "Welcome back" : "Create your institute"}</h2>
-          <p className="text-sm text-slate-500 mt-1">{view === "login" ? "Sign in to your workspace" : "Set up your workspace as Principal"}</p>
+          <h2 className="text-2xl font-extrabold font-heading text-slate-900 mt-5">{step === "login" ? "Welcome back" : "Verify it's you"}</h2>
+          <p className="text-sm text-slate-500 mt-1 text-center">{step === "login" ? "Sign in to your workspace" : `Enter the 6-digit code sent to ${hint}`}</p>
         </div>
 
-        {view === "login" ? (
+        {step === "login" ? (
           <form onSubmit={doLogin} className="space-y-4">
             <div>
-              <Label className="text-slate-700">Username or Email</Label>
-              <Input data-testid="login-identifier" className="mt-1.5 h-11" placeholder="Enter your username or email"
+              <Label className="text-slate-700">Email or Student ID</Label>
+              <Input data-testid="login-identifier" className="mt-1.5 h-11" placeholder="Enter your email or Student ID"
                 value={li.identifier} onChange={(e) => setLi({ ...li, identifier: e.target.value })} required />
             </div>
             <div>
@@ -93,37 +99,32 @@ export default function Landing() {
                 </button>
               </div>
             </div>
-            <div className="flex items-center justify-between text-sm">
-              <label className="flex items-center gap-2 cursor-pointer text-slate-600">
-                <input data-testid="remember-me" type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />
-                Remember me
-              </label>
+            <div className="flex items-center justify-end text-sm">
               <button type="button" data-testid="forgot-password-link" onClick={() => setFp((s) => ({ ...s, open: true, step: 1 }))} className="font-medium text-blue-700 hover:text-emerald-700">Forgot password?</button>
             </div>
             <Button data-testid="login-submit" disabled={loading}
               className="group w-full h-12 text-white font-semibold border-0 rounded-xl shadow-[0_14px_32px_-12px_rgba(6,78,59,0.8)] hover:brightness-110 transition-all"
               style={{ backgroundImage: BTN }}>
-              {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <span className="flex items-center justify-center gap-2">Sign In <ArrowRight className="h-[18px] w-[18px] group-hover:translate-x-1 transition-transform" /></span>}
+              {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <span className="flex items-center justify-center gap-2">Continue <ArrowRight className="h-[18px] w-[18px] group-hover:translate-x-1 transition-transform" /></span>}
             </Button>
-
-            <p className="text-center text-sm text-slate-500 pt-1">New institute?{" "}
-              <button type="button" data-testid="tab-register" onClick={() => setView("register")} className="font-semibold text-blue-700 hover:text-emerald-700">Create workspace</button>
-            </p>
+            <p className="text-center text-xs text-slate-400 pt-1">Access is by invitation. Accounts are provisioned by your institute administrator.</p>
           </form>
         ) : (
-          <form onSubmit={doRegister} className="space-y-3.5">
-            <div><Label className="text-slate-700">Institute Name</Label><Input data-testid="reg-institute" className="mt-1.5 h-11" value={reg.institute_name} onChange={(e) => setReg({ ...reg, institute_name: e.target.value })} required /></div>
-            <div><Label className="text-slate-700">Your Name (Principal)</Label><Input data-testid="reg-name" className="mt-1.5 h-11" value={reg.principal_name} onChange={(e) => setReg({ ...reg, principal_name: e.target.value })} required /></div>
-            <div><Label className="text-slate-700">Email</Label><Input data-testid="reg-email" type="email" className="mt-1.5 h-11" value={reg.email} onChange={(e) => setReg({ ...reg, email: e.target.value })} required /></div>
-            <div><Label className="text-slate-700">Password</Label><Input data-testid="reg-password" type="password" className="mt-1.5 h-11" value={reg.password} onChange={(e) => setReg({ ...reg, password: e.target.value })} required /></div>
-            <Button data-testid="reg-submit" disabled={loading}
-              className="group w-full h-12 text-white font-semibold border-0 rounded-xl shadow-[0_14px_32px_-12px_rgba(6,78,59,0.8)] hover:brightness-110 transition-all"
-              style={{ backgroundImage: BTN }}>
-              {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <span className="flex items-center justify-center gap-2">Create Institute <ArrowRight className="h-[18px] w-[18px] group-hover:translate-x-1 transition-transform" /></span>}
+          <form onSubmit={doVerify} className="space-y-4">
+            <div className="flex justify-center mb-1"><span className="h-12 w-12 rounded-full bg-blue-50 grid place-items-center"><ShieldCheck className="h-6 w-6 text-blue-600" /></span></div>
+            <div>
+              <Label className="text-slate-700">6-digit code</Label>
+              <Input data-testid="otp-input" inputMode="numeric" maxLength={6} className="mt-1.5 h-12 text-center text-2xl font-bold tracking-[0.5em]"
+                placeholder="______" value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))} required autoFocus />
+            </div>
+            <Button data-testid="verify-otp-submit" disabled={loading || otp.length !== 6}
+              className="w-full h-12 text-white font-semibold border-0 rounded-xl hover:brightness-110 transition-all" style={{ backgroundImage: BTN }}>
+              {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Verify & Sign In"}
             </Button>
-            <p className="text-center text-sm text-slate-500">Already have an account?{" "}
-              <button type="button" data-testid="tab-login" onClick={() => setView("login")} className="font-semibold text-blue-700 hover:text-emerald-700">Sign in</button>
-            </p>
+            <div className="flex items-center justify-between text-sm">
+              <button type="button" data-testid="otp-back" onClick={() => { setStep("login"); setOtp(""); }} className="flex items-center gap-1 text-slate-500 hover:text-slate-700"><ArrowLeft className="h-4 w-4" />Back</button>
+              <button type="button" data-testid="otp-resend" onClick={resend} className="font-medium text-blue-700 hover:text-emerald-700">Resend code</button>
+            </div>
           </form>
         )}
 

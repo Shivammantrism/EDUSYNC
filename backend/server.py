@@ -38,6 +38,23 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
+# Shared "marketing" DB (institute activation source). Falls back to app DB until configured.
+_MKT_URL = os.environ.get("MARKETING_MONGO_URL", "").strip()
+_MKT_DB = os.environ.get("MARKETING_DB_NAME", "").strip()
+mkt_client = AsyncIOMotorClient(_MKT_URL) if _MKT_URL else None
+mkt_db = mkt_client[_MKT_DB] if (mkt_client and _MKT_DB) else None
+SUPER_ADMIN_EMAIL = "founder@privamsolutions.in"
+
+
+async def institute_is_active(institute_id):
+    if not institute_id:
+        return True
+    source = mkt_db if mkt_db is not None else db
+    inst = await source.institutes.find_one({"id": institute_id}, {"_id": 0, "status": 1})
+    if inst is None and mkt_db is not None:
+        inst = await db.institutes.find_one({"id": institute_id}, {"_id": 0, "status": 1})
+    return (inst or {}).get("status", "active") != "inactive"
+
 JWT_SECRET = os.environ['JWT_SECRET']
 JWT_ALG = "HS256"
 APP_NAME = "edusync"
@@ -347,6 +364,20 @@ class LoginReq(BaseModel):
     password: str
 
 
+class OtpVerify(BaseModel):
+    identifier: str
+    otp: str
+
+
+class SuperAdminUserIn(BaseModel):
+    name: str
+    email: Optional[str] = ""
+    password: Optional[str] = ""
+    role: Optional[str] = "teacher"
+    institute_id: Optional[str] = ""
+    status: Optional[str] = "active"
+
+
 class TeacherIn(BaseModel):
     name: str
     email: EmailStr
@@ -570,6 +601,28 @@ async def register_institute(body: RegisterInstitute):
     return {"access_token": token, "user": {"id": uid, "name": body.principal_name, "email": email, "role": "principal", "institute_id": inst_id, "institute_name": body.institute_name}}
 
 
+OTP_TTL_MIN = 10
+
+
+def _mask_email(e):
+    if not e or "@" not in e:
+        return e or ""
+    name, dom = e.split("@", 1)
+    return (name[0] + "***" if name else "***") + "@" + dom
+
+
+async def _issue_login_otp(identifier, user_id, role, email, inst_name):
+    code = f"{secrets.randbelow(900000) + 100000}"
+    await db.login_otps.update_one({"identifier": identifier}, {"$set": {
+        "identifier": identifier, "code_hash": hash_pw(code), "user_id": user_id, "role": role,
+        "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=OTP_TTL_MIN)).isoformat(),
+        "attempts": 0, "used": False, "created_at": now_iso()}}, upsert=True)
+    body_html = (f"<p style='color:#475569;font-size:14px;line-height:1.6'>Use this One-Time Password to complete your EduSync sign-in:</p>"
+                 f"<p style='font-size:32px;font-weight:800;letter-spacing:10px;color:#0f172a;text-align:center;margin:14px 0'>{code}</p>"
+                 f"<p style='color:#94a3b8;font-size:13px'>This code expires in {OTP_TTL_MIN} minutes. If you didn't try to sign in, please ignore this email.</p>")
+    asyncio.create_task(send_email(email, "Your EduSync login code", _brand_email_html({"name": inst_name or "EduSync"}, "Verify your sign-in", body_html, cta=False)))
+
+
 @api.post("/auth/login")
 async def login(body: LoginReq):
     ident = body.identifier.strip()
@@ -592,18 +645,146 @@ async def login(body: LoginReq):
         await db.login_attempts.update_one({"id": key}, {"$set": upd}, upsert=True)
         raise HTTPException(401, "Invalid credentials")
     await db.login_attempts.delete_one({"id": key})
-    token = make_token(user["id"], role, user["institute_id"])
-    inst = await db.institutes.find_one({"id": user["institute_id"]}, {"_id": 0})
+    if user.get("status") == "inactive":
+        raise HTTPException(403, "Your account has been deactivated. Please contact your administrator.")
+    if role != "super_admin" and not await institute_is_active(user.get("institute_id")):
+        raise HTTPException(403, "Your institute is not active yet. Please contact EduSync support.")
+    otp_email = user.get("email") if role != "student" else (user.get("email") or user.get("parent_email"))
+    if otp_email:
+        inst = await db.institutes.find_one({"id": user.get("institute_id")}, {"_id": 0, "name": 1}) or {}
+        await _issue_login_otp(ident, user["id"], role, otp_email, inst.get("name"))
+        return {"otp_required": True, "identifier": ident, "email_hint": _mask_email(otp_email)}
+    token = make_token(user["id"], role, user.get("institute_id"))
+    inst = await db.institutes.find_one({"id": user.get("institute_id")}, {"_id": 0})
+    return {"access_token": token, "otp_required": False, "user": {"id": user["id"], "name": user["name"], "role": role,
+            "institute_id": user.get("institute_id"), "institute_name": inst["name"] if inst else "",
+            "student_id": user.get("student_id"), "email": user.get("email")}}
+
+
+@api.post("/auth/verify-otp")
+async def verify_otp(body: OtpVerify):
+    ident = body.identifier.strip()
+    rec = await db.login_otps.find_one({"identifier": ident})
+    if not rec or rec.get("used"):
+        raise HTTPException(400, "No pending sign-in. Please log in again.")
+    if datetime.fromisoformat(rec["expires_at"]) < datetime.now(timezone.utc):
+        raise HTTPException(400, "This code has expired. Please log in again.")
+    if rec.get("attempts", 0) >= 5:
+        raise HTTPException(429, "Too many incorrect attempts. Please log in again.")
+    if not verify_pw(body.otp.strip(), rec["code_hash"]):
+        await db.login_otps.update_one({"identifier": ident}, {"$inc": {"attempts": 1}})
+        raise HTTPException(401, "Invalid code")
+    await db.login_otps.update_one({"identifier": ident}, {"$set": {"used": True}})
+    role = rec["role"]
+    coll = db.students if role == "student" else db.users
+    user = await coll.find_one({"id": rec["user_id"]})
+    if not user:
+        raise HTTPException(404, "User not found")
+    token = make_token(user["id"], role, user.get("institute_id"))
+    inst = await db.institutes.find_one({"id": user.get("institute_id")}, {"_id": 0})
     return {"access_token": token, "user": {"id": user["id"], "name": user["name"], "role": role,
-            "institute_id": user["institute_id"], "institute_name": inst["name"] if inst else "",
+            "institute_id": user.get("institute_id"), "institute_name": inst["name"] if inst else "",
             "student_id": user.get("student_id"), "email": user.get("email")}}
 
 
 @api.get("/auth/me")
 async def me(user=Depends(get_current_user)):
-    inst = await db.institutes.find_one({"id": user["institute_id"]}, {"_id": 0})
+    inst = await db.institutes.find_one({"id": user.get("institute_id")}, {"_id": 0})
     user["institute_name"] = inst["name"] if inst else ""
     return user
+
+
+# ---------------------------------------------------------------- super admin
+async def require_super_admin(user=Depends(get_current_user)):
+    if user.get("role") != "super_admin" and (user.get("email") or "").lower() != SUPER_ADMIN_EMAIL:
+        raise HTTPException(403, "Super admin access only")
+    return user
+
+
+@api.get("/super-admin/institutes")
+async def sa_institutes(user=Depends(require_super_admin)):
+    out = []
+    for inst in await db.institutes.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000):
+        iid = inst["id"]
+        out.append({**inst, "status": inst.get("status", "active"),
+                    "student_count": await db.students.count_documents({"institute_id": iid}),
+                    "user_count": await db.users.count_documents({"institute_id": iid})})
+    return out
+
+
+@api.get("/super-admin/users")
+async def sa_users(user=Depends(require_super_admin), institute_id: Optional[str] = None):
+    q = {"institute_id": institute_id} if institute_id else {}
+    users = await db.users.find(q, {"_id": 0, "password_hash": 0}).to_list(5000)
+    students = await db.students.find(q, {"_id": 0, "password_hash": 0}).to_list(5000)
+    for s in students:
+        s["role"] = "student"
+    return {"staff": users, "students": students}
+
+
+@api.post("/super-admin/users")
+async def sa_create_user(body: SuperAdminUserIn, user=Depends(require_super_admin)):
+    if not body.email:
+        raise HTTPException(400, "Email required")
+    email = body.email.lower()
+    if await db.users.find_one({"email": email}):
+        raise HTTPException(400, "Email already registered")
+    uid = str(uuid.uuid4())
+    await db.users.insert_one({"id": uid, "email": email, "name": body.name,
+        "role": body.role or "teacher", "institute_id": body.institute_id or None,
+        "status": body.status or "active", "password_hash": hash_pw(body.password or gen_temp_password()),
+        "created_at": now_iso()})
+    return await db.users.find_one({"id": uid}, {"_id": 0, "password_hash": 0})
+
+
+@api.put("/super-admin/users/{uid}")
+async def sa_update_user(uid: str, payload: dict, user=Depends(require_super_admin)):
+    coll = db.students if payload.get("role") == "student" or await db.students.find_one({"id": uid}) else db.users
+    upd = {}
+    for k in ("name", "status", "role", "institute_id"):
+        if payload.get(k) is not None:
+            upd[k] = payload[k]
+    if payload.get("email"):
+        upd["email"] = str(payload["email"]).lower()
+    if payload.get("password"):
+        upd["password_hash"] = hash_pw(payload["password"])
+    if not upd:
+        raise HTTPException(400, "Nothing to update")
+    r = await coll.update_one({"id": uid}, {"$set": upd})
+    if r.matched_count == 0:
+        raise HTTPException(404, "User not found")
+    return {"ok": True}
+
+
+@api.put("/super-admin/users/{uid}/status")
+async def sa_user_status(uid: str, payload: dict, user=Depends(require_super_admin)):
+    status = payload.get("status", "active")
+    coll = db.students if await db.students.find_one({"id": uid}) else db.users
+    r = await coll.update_one({"id": uid}, {"$set": {"status": status}})
+    if r.matched_count == 0:
+        raise HTTPException(404, "User not found")
+    return {"ok": True, "status": status}
+
+
+@api.delete("/super-admin/users/{uid}")
+async def sa_delete_user(uid: str, user=Depends(require_super_admin)):
+    target = await db.users.find_one({"id": uid})
+    if target and (target.get("email") or "").lower() == SUPER_ADMIN_EMAIL:
+        raise HTTPException(400, "Cannot delete the Super Admin account")
+    r1 = await db.users.delete_one({"id": uid})
+    r2 = await db.students.delete_one({"id": uid})
+    if r1.deleted_count + r2.deleted_count == 0:
+        raise HTTPException(404, "User not found")
+    return {"ok": True}
+
+
+@api.put("/super-admin/institutes/{iid}/status")
+async def sa_institute_status(iid: str, payload: dict, user=Depends(require_super_admin)):
+    status = payload.get("status", "active")
+    r = await db.institutes.update_one({"id": iid}, {"$set": {"status": status}})
+    if r.matched_count == 0:
+        raise HTTPException(404, "Institute not found")
+    return {"ok": True, "status": status}
 
 
 # ---------------------------------------------------------------- files
@@ -2716,7 +2897,20 @@ async def update_institute(payload: dict, user=Depends(require("principal"))):
     return await db.institutes.find_one({"id": user["institute_id"]}, {"_id": 0})
 
 
+async def ensure_super_admin():
+    email = SUPER_ADMIN_EMAIL
+    if not await db.users.find_one({"email": email}):
+        await db.users.insert_one({"id": str(uuid.uuid4()), "email": email, "name": "Super Admin",
+            "role": "super_admin", "institute_id": None, "status": "active",
+            "password_hash": hash_pw(os.environ.get("SUPER_ADMIN_PASSWORD", "PrivamSuper@2026")),
+            "created_at": now_iso()})
+    await db.institutes.update_many({"status": {"$exists": False}}, {"$set": {"status": "active"}})
+    await db.users.update_many({"status": {"$exists": False}}, {"$set": {"status": "active"}})
+    await db.students.update_many({"status": {"$exists": False}}, {"$set": {"status": "active"}})
+
+
 async def tag_sensitive_data():
+    """Logically tag student PII collections for high-security, role-scoped access control (DPDP Act)."""
     """Logically tag student PII collections for high-security, role-scoped access control (DPDP Act)."""
     await db.data_governance.update_one(
         {"id": "student-pii"},
@@ -2934,6 +3128,10 @@ async def startup():
         await tag_sensitive_data()
     except Exception as e:
         logger.error(f"Data governance tagging failed: {e}")
+    try:
+        await ensure_super_admin()
+    except Exception as e:
+        logger.error(f"Super admin seed failed: {e}")
 
 
 @app.on_event("shutdown")
