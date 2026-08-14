@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { ShieldCheck, LogOut, Power, Trash2, UserPlus, Loader2, Building2, KeyRound } from "lucide-react";
+import { ShieldCheck, LogOut, Power, Trash2, UserPlus, Loader2, Building2, KeyRound, RefreshCw, Wifi, WifiOff } from "lucide-react";
 
 export default function SuperAdmin() {
   const { user, logout } = useAuth();
@@ -19,11 +19,13 @@ export default function SuperAdmin() {
   const [sel, setSel] = useState(null);
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState({ name: "", email: "", password: "", role: "teacher", institute_id: "" });
+  const [sync, setSync] = useState(null);
 
   const loadInst = () => api.get("/super-admin/institutes").then((r) => setInstitutes(r.data)).catch((e) => toast.error(formatErr(e.response?.data?.detail)));
   const loadUsers = (iid) => api.get("/super-admin/users", { params: iid ? { institute_id: iid } : {} }).then((r) => setUsers(r.data));
+  const loadSync = () => { setSync(null); api.get("/super-admin/sync-health").then((r) => setSync(r.data)).catch(() => setSync({ reachable: false, message: "Health check failed." })); };
 
-  useEffect(() => { loadInst(); loadUsers(); }, []);
+  useEffect(() => { loadInst(); loadUsers(); loadSync(); }, []);
   useEffect(() => { loadUsers(sel); }, [sel]);
 
   const toggleInst = async (i) => {
@@ -69,6 +71,29 @@ export default function SuperAdmin() {
       </header>
 
       <div className="max-w-6xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+        <div className="lg:col-span-5">
+          <div data-testid="sync-health-panel" className={`rounded-2xl p-4 flex items-center justify-between gap-4 border ${sync === null ? "bg-white/90 border-slate-200" : sync.reachable ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200"}`}>
+            <div className="flex items-center gap-3 min-w-0">
+              <span className={`h-10 w-10 rounded-xl grid place-items-center flex-shrink-0 ${sync === null ? "bg-slate-100 text-slate-400" : sync.reachable ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                {sync === null ? <Loader2 className="h-5 w-5 animate-spin" /> : sync.reachable ? <Wifi className="h-5 w-5" /> : <WifiOff className="h-5 w-5" />}
+              </span>
+              <div className="min-w-0">
+                <p className="font-heading font-bold text-slate-800 text-sm flex items-center gap-2">
+                  Marketing Sync API
+                  {sync !== null && (
+                    <span data-testid="sync-status-badge" className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${sync.reachable ? "bg-emerald-200 text-emerald-800" : "bg-red-200 text-red-800"}`}>
+                      {sync.reachable ? "Connected" : "Not reachable"}{sync.status ? ` · ${sync.status}` : ""}
+                    </span>
+                  )}
+                </p>
+                <p className="text-xs text-slate-500 truncate">{sync === null ? "Checking connection…" : sync.message}</p>
+              </div>
+            </div>
+            <button data-testid="sync-refresh-btn" onClick={loadSync} className="flex items-center gap-1.5 text-sm font-semibold text-slate-600 hover:text-slate-900 bg-white border border-slate-200 rounded-lg px-3 py-2 flex-shrink-0">
+              <RefreshCw className="h-4 w-4" />Re-check
+            </button>
+          </div>
+        </div>
         <div className="lg:col-span-2 space-y-3">
           <div className="flex items-center gap-2 text-white/90 font-semibold"><Building2 className="h-4 w-4" />Institutes ({institutes.length})</div>
           {institutes.map((i) => (

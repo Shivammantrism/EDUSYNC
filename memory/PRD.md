@@ -211,3 +211,9 @@ All use `notify_parent_async` (WhatsApp-first via TWILIO_WHATSAPP_FROM → SMS f
 - **VERIFIED (curl)**: teacher created → flag true; wrong current → 400; forced change without current → 200 → flag cleared → login with NEW password works; `/auth/me` exposes flag. Frontend compiles clean; OTP 2FA screen confirmed via screenshot. (Change-password page screenshot not captured because clicking Continue regenerates the OTP in-browser — logic verified via curl instead.)
 - NOTE: Part 1 of the request (Super Admin "Confirm Payment & Activate" generating the temp password + welcome email) lives on the **Marketing Site**, a separate app not in this repo — must be implemented there; EduSync consumes the resulting temp password via the Sync API / credential emails.
 
+## Sync Health panel (2026-06, forked session, part 16)
+- `GET /api/super-admin/sync-health` (super-admin only): pings `POST {SYNC_BASE_URL}/api/sync/verify-principal` with dummy creds and classifies: 404→not deployed, 401/403→bad key but reachable, 200/400/422→reachable & responding, exception→unreachable. Returns {configured, reachable, status, base_url, message}.
+- Super Admin dashboard shows a **Sync Health panel** (data-testid=sync-health-panel, sync-status-badge, sync-refresh-btn) — green "Connected" / red "Not reachable · <status>" with a Re-check button.
+- VERIFIED (curl): against live marketing API returns reachable:false, status:404, correct message ("marketing backend hasn't deployed the Sync routes yet"). Confirms EduSync side is ready; blocker is the missing `/api/sync/*` routes on privamsolutions.in.
+- Diagnosis recap: `/api/sync/verify-principal` → 404 JSON on privamsolutions.in/www/app; `POST /api/` → 405 (FastAPI backend exists, sync routes not registered). EduSync Sync integration present in preview (needs redeploy to production).
+

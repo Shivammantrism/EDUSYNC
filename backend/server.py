@@ -795,6 +795,30 @@ async def require_super_admin(user=Depends(get_current_user)):
     return user
 
 
+@api.get("/super-admin/sync-health")
+async def sa_sync_health(user=Depends(require_super_admin)):
+    if not SYNC_BASE_URL or not SYNC_KEY:
+        return {"configured": False, "reachable": False, "message": "Sync API not configured (SYNC_BASE_URL/SYNC_KEY missing)."}
+    url = f"{SYNC_BASE_URL}/api/sync/verify-principal"
+    try:
+        async with httpx.AsyncClient(timeout=12) as c:
+            r = await c.post(url, headers={"X-Sync-Key": SYNC_KEY},
+                             json={"email": "healthcheck@privamsolutions.in", "password": "__healthcheck__"})
+        code = r.status_code
+        if code == 404:
+            return {"configured": True, "reachable": False, "status": 404, "base_url": SYNC_BASE_URL,
+                    "message": "Endpoint /api/sync/verify-principal not found (404). The marketing backend hasn't deployed the Sync routes yet."}
+        if code in (401, 403):
+            return {"configured": True, "reachable": True, "status": code, "base_url": SYNC_BASE_URL,
+                    "message": "Sync API reachable but rejected the X-Sync-Key. Verify the key matches the marketing site."}
+        # 200 (valid:false for the fake creds) or 400/422 => endpoint exists and is responding
+        return {"configured": True, "reachable": True, "status": code, "base_url": SYNC_BASE_URL,
+                "message": "Sync API is reachable and responding. Marketing-activated principals can log in."}
+    except Exception as e:
+        return {"configured": True, "reachable": False, "status": None, "base_url": SYNC_BASE_URL,
+                "message": f"Could not reach the Sync API: {str(e)[:140]}"}
+
+
 @api.get("/super-admin/institutes")
 async def sa_institutes(user=Depends(require_super_admin)):
     out = []
