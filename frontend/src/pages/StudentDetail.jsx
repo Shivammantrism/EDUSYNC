@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import IDCard from "@/components/IDCard";
+import StudentInsights from "@/components/StudentInsights";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { Upload, FileText, Printer, Trash2, Download, Sparkles, Loader2, File } from "lucide-react";
@@ -68,6 +69,7 @@ export default function StudentDetail() {
           <TabsTrigger value="profile" data-testid="tab-profile">Profile</TabsTrigger>
           <TabsTrigger value="documents" data-testid="tab-documents">Documents</TabsTrigger>
           <TabsTrigger value="idcard" data-testid="tab-idcard">ID Card</TabsTrigger>
+          <TabsTrigger value="insights" data-testid="tab-insights">AI Insights</TabsTrigger>
         </TabsList>
 
         <TabsContent value="profile">
@@ -140,6 +142,10 @@ export default function StudentDetail() {
             <IDCard student={s} institute={institute} />
             <Button data-testid="print-idcard-btn" onClick={printCard} className="no-print btn-gradient"><Printer className="h-4 w-4 mr-2" />Print ID Card</Button>
           </div>
+        </TabsContent>
+
+        <TabsContent value="insights">
+          <StudentInsights studentId={id} />
         </TabsContent>
       </Tabs>
     </div>

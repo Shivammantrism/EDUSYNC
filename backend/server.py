@@ -2623,6 +2623,83 @@ async def principal_dashboard(user=Depends(require("principal"))):
             "recent_students": recent_students, "recent_complaints": recent_complaints}
 
 
+@api.get("/students/{sid}/insights")
+async def student_insights(sid: str, user=Depends(get_current_user)):
+    iid = user["institute_id"]
+    s = await db.students.find_one({"$or": [{"id": sid}, {"student_id": sid}], "institute_id": iid}, {"_id": 0})
+    if not s:
+        raise HTTPException(404, "Student not found")
+    if user["role"] == "student" and user["id"] != s["id"]:
+        raise HTTPException(403, "Forbidden")
+    sidv = s["id"]
+    # attendance
+    tot = await db.attendance.count_documents({"student_id": sidv})
+    pres = await db.attendance.count_documents({"student_id": sidv, "status": "present"})
+    att = round(pres / tot * 100, 1) if tot else 0
+    # results (chronological by exam date)
+    exams = {e["id"]: e.get("exam_date", "") for e in await db.exams.find({"institute_id": iid}, {"_id": 0, "id": 1, "exam_date": 1}).to_list(5000)}
+    mine = await db.results.find({"student_id": sidv}, {"_id": 0, "subject": 1, "percentage": 1, "exam_id": 1}).to_list(2000)
+    mine.sort(key=lambda r: str(exams.get(r.get("exam_id"), "")))
+    avg = round(sum(r["percentage"] for r in mine) / len(mine), 1) if mine else 0
+    # class averages per subject
+    peers = await db.results.find({"institute_id": iid}, {"_id": 0, "subject": 1, "percentage": 1}).to_list(200000)
+    csum, ccnt = {}, {}
+    for r in peers:
+        csum[r["subject"]] = csum.get(r["subject"], 0) + r["percentage"]
+        ccnt[r["subject"]] = ccnt.get(r["subject"], 0) + 1
+    subj_latest = {}
+    for r in mine:
+        subj_latest[r["subject"]] = r["percentage"]
+    subjects = []
+    for sub, pct in subj_latest.items():
+        cavg = round(csum[sub] / ccnt[sub], 1) if ccnt.get(sub) else 0
+        subjects.append({"subject": sub, "score": round(pct, 1), "class_avg": cavg, "delta": round(pct - cavg, 1),
+                         "level": "strength" if pct - cavg >= 8 else ("weakness" if pct - cavg <= -8 else "on-track")})
+    subjects.sort(key=lambda x: x["delta"], reverse=True)
+    # consecutive grade drops (overall %, chronological)
+    drops, streak = 0, 0
+    for i in range(1, len(mine)):
+        if mine[i]["percentage"] < mine[i - 1]["percentage"]:
+            streak += 1
+            drops = max(drops, streak)
+        else:
+            streak = 0
+    # growth score: academics 50, attendance 30, consistency 20
+    consistency = max(0, 100 - drops * 25)
+    growth = round(avg * 0.5 + att * 0.3 + consistency * 0.2)
+    at_risk = (att < 75 and tot > 0) or drops >= 2
+    top = avg >= 85 and att >= 90
+    status = "at-risk" if at_risk else ("top" if top else "steady")
+    strengths = [x["subject"] for x in subjects if x["level"] == "strength"][:3]
+    weaknesses = [x["subject"] for x in subjects if x["level"] == "weakness"][:3]
+    # AI summary + 7-day plan
+    summary, plan = "", []
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        subj_txt = "; ".join(f"{x['subject']} {x['score']}% (class {x['class_avg']}%)" for x in subjects) or "no marks yet"
+        chat = LlmChat(api_key=EMERGENT_KEY, session_id=f"insight-{sidv}",
+            system_message=("You are a school academic advisor. Given a student's data, reply in STRICT JSON: "
+                            "{\"summary\": \"3-4 sentence performance summary, warm and specific\", "
+                            "\"plan\": [\"7 short daily action items, one per day\"]}. Plan must have exactly 7 items. No markdown, JSON only.")).with_model("gemini", "gemini-3-flash-preview")
+        raw = await chat.send_message(UserMessage(text=f"Student {s['name']}. Attendance {att}%. Overall avg {avg}%. Subjects: {subj_txt}. Consecutive grade drops: {drops}. Status: {status}."))
+        import json as _json, re as _re
+        m = _re.search(r"\{.*\}", raw, _re.S)
+        data = _json.loads(m.group(0)) if m else {}
+        summary = data.get("summary", "")
+        plan = (data.get("plan") or [])[:7]
+    except Exception as e:
+        logger.warning(f"insight AI failed: {e}")
+        summary = f"{s['name']} has {att}% attendance and an overall average of {avg}%. " + ("Attention needed on consistency and weaker subjects." if at_risk else "Keep up the steady effort.")
+    result = {"student_id": s.get("student_id"), "name": s["name"], "growth_score": growth, "status": status,
+              "attendance": att, "average": avg, "consecutive_drops": drops, "strengths": strengths,
+              "weaknesses": weaknesses, "subjects": subjects, "summary": summary}
+    if user["role"] in ("principal", "teacher") or status == "at-risk":
+        result["plan"] = plan if plan else ([] if not at_risk else ["Review today's weakest subject for 20 min",
+            "Complete all pending homework", "Attend every class this week", "Practice 10 problems in the weakest subject",
+            "Revise yesterday's lessons for 15 min", "Ask the teacher one doubt", "Take a short self-test and track score"])
+    return result
+
+
 @api.get("/dashboard/insights")
 async def principal_insights(user=Depends(require("principal"))):
     iid = user["institute_id"]
