@@ -10,7 +10,7 @@ import {
   LayoutDashboard, Users, GraduationCap, CalendarCheck, Wallet, FileText,
   BookOpen, Megaphone, MessageSquareWarning, UserPlus, CalendarDays, Banknote,
   LogOut, Menu, X, PlaneTakeoff, IdCard, Settings, ListChecks, Images,
-  Bell, KeyRound, Wallet as WalletIcon, UserX, Megaphone as MegaphoneIcon, UserPlus as UserPlusIcon, PlaneTakeoff as PlaneIcon,
+  Bell, KeyRound, Sparkles, Wallet as WalletIcon, UserX, Megaphone as MegaphoneIcon, UserPlus as UserPlusIcon, PlaneTakeoff as PlaneIcon,
 } from "lucide-react";
 
 const NOTIF_META = {
@@ -175,6 +175,7 @@ const NAV = {
     ["/app/exams", "My Results", FileText, "exams"],
     ["/app/quizzes", "Online Tests", ListChecks, "quizzes"],
     ["/app/homework", "Homework", BookOpen, "homework"],
+    ["/app/assistant", "AI Study Buddy", Sparkles, "quizzes"],
     ["/app/idcard", "Digital ID Card", IdCard, "idcard"],
     ["/app/announcements", "Announcements", Megaphone, "announcements"],
     ["/app/complaints", "Complaints", MessageSquareWarning, "complaints"],

@@ -29,6 +29,7 @@ import PrivacyPolicy from "@/pages/PrivacyPolicy";
 import Terms from "@/pages/Terms";
 import SuperAdmin from "@/pages/SuperAdmin";
 import ChangePassword from "@/pages/ChangePassword";
+import AIAssistant from "@/pages/AIAssistant";
 import { Loader } from "@/components/common";
 
 function Protected({ children }) {
@@ -90,6 +91,7 @@ function App() {
               <Route path="faculty-ids" element={<FacultyIDCards />} />
               <Route path="gallery" element={<Gallery />} />
               <Route path="change-password" element={<ChangePassword />} />
+              <Route path="assistant" element={<AIAssistant />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

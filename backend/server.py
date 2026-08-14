@@ -2756,6 +2756,47 @@ async def ai_report_summary(body: AIReq, user=Depends(require("principal", "teac
         return {"summary": f"{s['name']} has an attendance of {att}%. Academic performance: {res_text}. Consistent effort and regular practice are recommended to improve further."}
 
 
+class AssistantReq(BaseModel):
+    session_id: str
+    message: str
+
+
+@api.get("/student/ai-assistant/history")
+async def ai_assistant_history(session_id: str, user=Depends(require("student"))):
+    doc = await db.ai_chats.find_one({"session_id": session_id, "student_id": user["id"]}, {"_id": 0, "messages": 1})
+    return {"messages": (doc or {}).get("messages", [])}
+
+
+@api.post("/student/ai-assistant")
+async def student_ai_assistant(body: AssistantReq, user=Depends(require("student"))):
+    if not body.message.strip():
+        raise HTTPException(400, "Empty message")
+    hist = await db.ai_chats.find_one({"session_id": body.session_id, "student_id": user["id"]})
+    prior = (hist or {}).get("messages", [])
+    batch = await db.batches.find_one({"id": user.get("batch_id")}, {"_id": 0, "name": 1})
+    grade = (batch or {}).get("name", "school")
+    context = ""
+    if prior:
+        context = "Recent conversation:\n" + "\n".join(f"{m['role']}: {m['text']}" for m in prior[-6:]) + "\n\n"
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        chat = LlmChat(api_key=EMERGENT_KEY, session_id=body.session_id,
+            system_message=(f"You are EduSync Study Buddy, a friendly, professional academic tutor for {user['name']}, "
+                            f"a student in {grade}. ONLY answer study/academic questions (maths, science, languages, social "
+                            f"studies, exam prep, concepts, homework help) at their grade level. Explain step-by-step and simply. "
+                            f"If asked anything non-academic, off-topic, personal, or inappropriate, politely decline and steer "
+                            f"back to studies. Keep answers concise and encouraging. No markdown headings.")).with_model("gemini", "gemini-3-flash-preview")
+        reply = await chat.send_message(UserMessage(text=context + "Student's question: " + body.message))
+    except Exception as e:
+        logger.error(f"AI assistant error: {e}")
+        raise HTTPException(500, "Study Buddy is unavailable right now. Please try again shortly.")
+    prior.append({"role": "user", "text": body.message, "ts": now_iso()})
+    prior.append({"role": "assistant", "text": reply, "ts": now_iso()})
+    await db.ai_chats.update_one({"session_id": body.session_id, "student_id": user["id"]},
+        {"$set": {"session_id": body.session_id, "student_id": user["id"], "messages": prior[-40:], "updated_at": now_iso()}}, upsert=True)
+    return {"reply": reply}
+
+
 @api.get("/student/ai-summary")
 async def student_ai_summary(user=Depends(require("student"))):
     sid = user["id"]
