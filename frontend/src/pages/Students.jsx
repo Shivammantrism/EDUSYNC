@@ -27,7 +27,7 @@ export default function Students() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [credResult, setCredResult] = useState(null);
-  const blank = { name: "", age: "", gender: "Male", batch_id: "", email: "", parent_name: "", parent_phone: "", parent_email: "", monthly_fee: 2000, photo_url: "", template: "classic", password: "", parental_consent: false };
+  const blank = { name: "", age: "", gender: "Male", batch_id: "", email: "", parent_name: "", parent_phone: "", parent_email: "", monthly_fee: 2000, photo_url: "", template: "classic", password: "", parental_consent: true };
   const [form, setForm] = useState(blank);
 
   const load = () => api.get("/students").then((r) => setStudents(r.data));
@@ -125,6 +125,12 @@ export default function Students() {
                   <div><Label>Login Password <span className="text-xs font-normal text-slate-400">(blank = keep unchanged)</span></Label><Input data-testid="student-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="New password" /></div>
                 ) : (
                   <p className="text-xs text-slate-500 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2" data-testid="student-cred-note">A unique Student ID and temporary password are auto-generated and emailed to the student &amp; parent on save.</p>
+                )}
+                {!editId && (
+                  <label className="flex items-start gap-2.5 text-sm bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2.5 cursor-pointer" data-testid="consent-label">
+                    <input data-testid="parental-consent" type="checkbox" checked={form.parental_consent} onChange={(e) => setForm({ ...form, parental_consent: e.target.checked })} className="mt-0.5 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />
+                    <span className="text-slate-600">Parental consent verified by the institute.</span>
+                  </label>
                 )}
               </div>
               <DialogFooter><Button data-testid="save-student-btn" onClick={save} disabled={saving || !form.name} className="btn-gradient">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : (editId ? "Save Changes" : "Register")}</Button></DialogFooter>

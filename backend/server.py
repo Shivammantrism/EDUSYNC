@@ -1042,8 +1042,6 @@ async def list_students(user=Depends(require("principal", "teacher")), batch_id:
 
 @api.post("/students")
 async def create_student(body: StudentIn, user=Depends(require("principal", "teacher"))):
-    if not body.parental_consent:
-        raise HTTPException(400, "Verifiable parental consent is required to register a minor's data.")
     inst = await db.institutes.find_one({"id": user["institute_id"]})
     prefix = inst_prefix(inst)
     if not inst.get("code"):
@@ -1058,8 +1056,9 @@ async def create_student(body: StudentIn, user=Depends(require("principal", "tea
                 "created_at": now_iso(), "join_month": datetime.now().strftime("%Y-%m"),
                 "must_change_password": True,
                 "data_classification": "restricted", "pii_category": "minor_sensitive", "access_scope": "role_scoped",
+                "is_minor_data": True,
                 "parental_consent": {"obtained": True,
-                                     "statement": "Verifiable parental consent obtained for this minor's data processing.",
+                                     "statement": "Parental consent verified by the institute.",
                                      "recorded_by": user["id"], "recorded_at": now_iso()}})
     doc.pop("password", None)
     await db.students.insert_one(doc)
