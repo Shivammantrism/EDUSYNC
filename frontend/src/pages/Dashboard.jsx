@@ -11,6 +11,7 @@ import { Users, CalendarCheck, Wallet, UserCheck, MessageSquareWarning, BookOpen
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import StudentInsights from "@/components/StudentInsights";
 import { toast } from "sonner";
 
 const STAGES = [
@@ -405,6 +406,11 @@ function StudentDash() {
           </ResponsiveContainer>
         ) : <p className="text-sm text-slate-400">No results yet.</p>}
       </ChartCard>
+
+      <div className="mt-6">
+        <h3 className="font-heading font-bold text-slate-800 mb-3 flex items-center gap-2"><Sparkles className="h-4 w-4 text-blue-600" />My AI Performance Insights</h3>
+        <StudentInsights studentId={user.id} />
+      </div>
     </div>
   );
 }
