@@ -55,6 +55,65 @@ async def institute_is_active(institute_id):
         inst = await db.institutes.find_one({"id": institute_id}, {"_id": 0, "status": 1})
     return (inst or {}).get("status", "active") != "inactive"
 
+
+# ---- Marketing Sync API (verify/provision principals over HTTP; no DB sharing) ----
+SYNC_BASE_URL = os.environ.get("SYNC_BASE_URL", "").rstrip("/")
+SYNC_KEY = os.environ.get("SYNC_KEY", "")
+
+
+async def sync_verify_principal(email, password):
+    """Verify a principal against the marketing Sync API.
+    Returns: principal dict (valid+active) | None (explicitly invalid) | 'inactive' | 'unavailable'."""
+    if not SYNC_BASE_URL or not SYNC_KEY:
+        return "unavailable"
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.post(f"{SYNC_BASE_URL}/api/sync/verify-principal",
+                             headers={"X-Sync-Key": SYNC_KEY},
+                             json={"email": email, "password": password})
+        if r.status_code == 404 or r.status_code >= 500:
+            logger.warning(f"Sync API unavailable ({r.status_code})")
+            return "unavailable"
+        try:
+            data = r.json()
+        except Exception:
+            return "unavailable"
+        if data.get("valid"):
+            p = data.get("principal") or {}
+            if p.get("active") is False:
+                return "inactive"
+            p.setdefault("email", email)
+            return p
+        return None
+    except Exception as e:
+        logger.warning(f"Sync API error: {e}")
+        return "unavailable"
+
+
+async def _provision_synced_principal(principal, password):
+    email = (principal.get("email") or "").lower()
+    code = principal.get("institute_code") or "SYNC"
+    active = principal.get("active", True)
+    inst = await db.institutes.find_one({"code": code})
+    if not inst:
+        institute_id = str(uuid.uuid4())
+        await db.institutes.insert_one({"id": institute_id, "name": principal.get("institute_name") or code,
+            "code": code, "status": "active" if active else "inactive", "synced": True, "created_at": now_iso()})
+    else:
+        institute_id = inst["id"]
+        await db.institutes.update_one({"id": institute_id}, {"$set": {"status": "active" if active else "inactive"}})
+    upd = {"name": principal.get("name") or email, "role": "principal", "institute_id": institute_id,
+           "status": "active" if active else "inactive", "password_hash": hash_pw(password), "synced": True,
+           "must_change_password": bool(principal.get("must_change_password"))}
+    existing = await db.users.find_one({"email": email})
+    if existing:
+        await db.users.update_one({"id": existing["id"]}, {"$set": upd})
+        uid = existing["id"]
+    else:
+        uid = str(uuid.uuid4())
+        await db.users.insert_one({"id": uid, "email": email, "created_at": now_iso(), **upd})
+    return uid, institute_id, "principal"
+
 JWT_SECRET = os.environ['JWT_SECRET']
 JWT_ALG = "HS256"
 APP_NAME = "edusync"
@@ -636,6 +695,18 @@ async def login(body: LoginReq):
     if not user:
         user = await db.students.find_one({"student_id": ident})
         role = "student"
+    # Marketing Sync API: authoritative check for principals (email logins).
+    if "@" in ident:
+        sync_res = await sync_verify_principal(ident.lower(), body.password)
+        if sync_res == "inactive":
+            raise HTTPException(403, "Your institute is not active yet. Please contact EduSync support.")
+        if isinstance(sync_res, dict):
+            await db.login_attempts.delete_one({"id": key})
+            uid, institute_id, role = await _provision_synced_principal(sync_res, body.password)
+            inst = await db.institutes.find_one({"id": institute_id}, {"_id": 0, "name": 1}) or {}
+            await _issue_login_otp(ident, uid, role, ident.lower(), inst.get("name"))
+            return {"otp_required": True, "identifier": ident, "email_hint": _mask_email(ident.lower())}
+        # sync_res is None (invalid) or 'unavailable' -> fall through to local auth
     if not user or not verify_pw(body.password, user.get("password_hash", "")):
         count = (rec.get("count", 0) + 1) if rec else 1
         upd = {"id": key, "count": count}
