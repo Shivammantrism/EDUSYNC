@@ -177,4 +177,14 @@ All use `notify_parent_async` (WhatsApp-first via TWILIO_WHATSAPP_FROM → SMS f
 - Declined (with rationale): localStorage→httpOnly cookies (deliberate JWT-Bearer architecture); large-function refactors (generate_timetable/create_salary — working code, regression risk); exhaustive-deps on run-once useEffects (infinite-loop risk); `is None` is correct idiom (no bug).
 - Performance: removed two N+1 query patterns — GET /api/batches (student counts via `$group` aggregation + bulk teacher lookup) and GET /api/homework (submission counts via `$group` + bulk my-submissions fetch). Both verified returning correct data.
 - **Deployment health check: PASS** (deployment_agent, zero findings). Compilation OK, env-only URLs/secrets, CORS ok, supervisor valid, no unoptimized queries. App is deployment-ready.
+- **Deploy fix**: added root-level `GET /health` on the FastAPI `app` (returns `{"status":"ok"}`, no DB) — the k8s readiness probe hit `/health` (not `/api/...`) and was 404ing, failing deploys. Verified 200 locally + via ingress.
+
+## Email — Resend/managed (2026-06, forked session, part 12)
+- User asked to wire a BYO Resend API key + custom `From` (founder@privamsolutions.in). Per the Resend integration playbook this is NOT permitted (platform owns the verified sending domain; From address is fixed; no BYO key). Implemented the compliant equivalent instead:
+  - Kept the Emergent-managed Resend proxy (`send_email`), which already delivers to real inboxes.
+  - Professional sender display name via `EMAIL_FROM_NAME="EduSync by Privam Solutions"` + **Reply-To** `EMAIL_REPLY_TO=founder@privamsolutions.in` (passed as `contact_email`) so replies reach the founder inbox.
+  - **Login link fixed** to `https://app.privamsolutions.in` via `APP_BASE_URL` (used in all email buttons + logo src).
+  - Added `_brand_email_html()` shared branded template. New emails now sent: **Principal welcome** (on institute registration), **Attendance-absent alert to parents** (email in addition to SMS), **Fee reminder to parents** (email + SMS; response now returns `email_sent`). Credential/welcome emails to teachers & students already existed.
+- Verified: emails send (`email_sent: True` to delivered@resend.dev), login link + reply-to + from_name confirmed.
+- NOTE: To send from `founder@privamsolutions.in` as the actual From address, the user would need a self-hosted SMTP/own-Resend setup outside the managed platform — not supported here; the Reply-To achieves the practical goal.
 

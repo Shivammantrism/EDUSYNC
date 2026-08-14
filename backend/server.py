@@ -112,6 +112,7 @@ MIME = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "gif": "i
 EMAIL_BASE_URL = "https://integrations.emergentagent.com"
 EMAIL_KEY = os.environ.get("EMERGENT_EMAIL_KEY")
 EMAIL_FROM_NAME = os.environ.get("EMAIL_FROM_NAME", "EduSync")
+EMAIL_REPLY_TO = os.environ.get("EMAIL_REPLY_TO")
 
 
 async def send_email(to, subject, html, attachments=None):
@@ -119,6 +120,8 @@ async def send_email(to, subject, html, attachments=None):
         logger.warning("Email skipped (no key/recipient)")
         return False
     payload = {"to": [to], "subject": subject, "html": html, "from_name": EMAIL_FROM_NAME}
+    if EMAIL_REPLY_TO:
+        payload["contact_email"] = EMAIL_REPLY_TO
     if attachments:
         payload["attachments"] = attachments
     for attempt in range(3):
@@ -559,6 +562,11 @@ async def register_institute(body: RegisterInstitute):
         "name": body.principal_name, "role": "principal", "institute_id": inst_id,
         "phone": body.phone, "created_at": now_iso()})
     token = make_token(uid, "principal", inst_id)
+    welcome_body = (f"<p style='color:#475569;font-size:14px;line-height:1.6'>Your EduSync workspace for "
+                    f"<b>{body.institute_name}</b> is ready. As Principal you have full access to admissions, "
+                    f"attendance, fees, academics, staff and reports. Sign in to get started.</p>")
+    asyncio.create_task(send_email(email, f"Welcome to EduSync — {body.institute_name}",
+                                   _brand_email_html({"name": body.institute_name}, f"Welcome, {body.principal_name}!", welcome_body)))
     return {"access_token": token, "user": {"id": uid, "name": body.principal_name, "email": email, "role": "principal", "institute_id": inst_id, "institute_name": body.institute_name}}
 
 
@@ -701,6 +709,25 @@ async def send_welcome_email(to, inst, name, role_label, login_id, password, id_
     inst_name = (inst.get("name") if inst else None) or "EduSync"
     html = _welcome_email_html(inst, name, role_label, login_id, password, id_label)
     return await send_email(to, f"Your {role_label} login for {inst_name} — EduSync", html)
+
+
+def _brand_email_html(inst, heading, body_html, cta=True):
+    inst_name = (inst.get("name") if inst else None) or "EduSync"
+    login_url = APP_BASE_URL or ""
+    logo = f"{APP_BASE_URL}/edusync-logo.png" if APP_BASE_URL else ""
+    logo_html = (f"<img src='{logo}' alt='EduSync' width='42' height='42' style='display:block;border-radius:9px;background:#ffffff;padding:4px' />") if logo else ""
+    btn = (f"<div style='text-align:center;margin:24px 0 4px'><a href='{login_url}' style='display:inline-block;background:#1E3A8A;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:10px;font-weight:bold;font-size:14px'>Open EduSync</a></div>") if (cta and login_url) else ""
+    return (f"<div style=\"background:#f1f5f9;padding:26px 0;font-family:Arial,Helvetica,sans-serif\">"
+            f"<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\"><tr><td align=\"center\">"
+            f"<table role=\"presentation\" width=\"560\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 30px rgba(15,23,42,0.08)\">"
+            f"<tr><td style=\"background:linear-gradient(90deg,#0b1e3b,#1a1240);padding:20px 26px\">"
+            f"<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\"><tr><td>{logo_html}</td>"
+            f"<td style=\"padding-left:12px\"><div style=\"color:#ffffff;font-size:19px;font-weight:800\">{inst_name}</div>"
+            f"<div style=\"color:#93c5fd;font-size:11px\">Powered by EduSync</div></td></tr></table></td></tr>"
+            f"<tr><td style=\"padding:28px 30px\"><h2 style=\"color:#0f172a;font-size:18px;margin:0 0 12px\">{heading}</h2>"
+            f"{body_html}{btn}"
+            f"<p style=\"color:#94a3b8;font-size:12px;margin:22px 0 0\">Sent by {inst_name} via EduSync — Privam Solutions. We never ask for your password by email.</p>"
+            f"</td></tr></table></td></tr></table></div>")
 
 
 @api.get("/students")
@@ -1028,11 +1055,19 @@ async def _mark_student(user, student, batch_id, status="present"):
 
     async def _maybe_notify(att_id, already):
         if status == "absent" and not already:
+            inst = await db.institutes.find_one({"id": user["institute_id"]}) or {}
             phone = student.get("parent_phone") or student.get("phone")
+            to = student.get("parent_email") or student.get("email")
             if phone:
-                inst = await db.institutes.find_one({"id": user["institute_id"]}) or {}
                 msg = f"Dear Parent, Your ward {student['name']} was marked absent today at {inst.get('name', 'our institute')}. - EduSync"
                 asyncio.create_task(notify_parent_async(phone, msg))
+            if to:
+                body_html = (f"<p style='color:#475569;font-size:14px;line-height:1.6'>Dear Parent, this is to inform you that "
+                             f"<b>{student['name']}</b> was marked <b style='color:#dc2626'>absent</b> today ({d}) at "
+                             f"{inst.get('name', 'our institute')}. If this is unexpected, please contact the school office.</p>")
+                asyncio.create_task(send_email(to, f"Attendance Alert — {student['name']} marked absent",
+                                               _brand_email_html(inst, "Absence Notification", body_html)))
+            if phone or to:
                 await db.attendance.update_one({"id": att_id}, {"$set": {"parent_notified": True}})
 
     if existing:
@@ -1295,16 +1330,29 @@ async def send_fee_reminder(fee_id: str, user=Depends(require("principal"))):
     msg = f"Dear Parent, fee of Rs.{remaining} for {fee.get('student_name')} ({fee.get('month')}) is due on {fee.get('due_date')}. Please pay at the earliest. - {inst['name'] if inst else 'EduSync'}"
     phone = fee.get("parent_phone")
     channel = notify_parent(phone, msg)
+    stu = await db.students.find_one({"id": fee.get("student_id")}, {"_id": 0, "email": 1, "parent_email": 1})
+    to = (stu or {}).get("parent_email") or (stu or {}).get("email")
+    email_ok = False
+    if to:
+        body_html = (f"<p style='color:#475569;font-size:14px;line-height:1.6'>Dear Parent, a fee of "
+                     f"<b>Rs. {remaining}</b> for <b>{fee.get('student_name')}</b> ({fee.get('month')}) is due on "
+                     f"<b>{fee.get('due_date')}</b>. Kindly clear it at the earliest. You can pay securely from the EduSync portal.</p>")
+        email_ok = await send_email(to, f"Fee Reminder — {fee.get('month')} ({fee.get('student_name')})",
+                                    _brand_email_html(inst, "Fee Payment Reminder", body_html))
     await db.fees.update_one({"id": fee_id}, {"$set": {"last_reminder": now_iso()}})
     await db.notifications.insert_one({"id": str(uuid.uuid4()), "institute_id": user["institute_id"],
                                        "type": "fee_reminder", "message": msg, "created_at": now_iso()})
-    if channel:
+    if channel and email_ok:
+        message = f"Reminder sent via {channel.upper()} and Email"
+    elif channel:
         message = f"Reminder sent via {channel.upper()}"
-    elif not phone:
-        message = "No parent phone number on file for this student"
+    elif email_ok:
+        message = "Reminder sent via Email"
+    elif not phone and not to:
+        message = "No parent phone or email on file for this student"
     else:
         message = "Could not deliver — SMS provider rejected the number (trial accounts only send to verified numbers)."
-    return {"ok": True, "sms_sent": bool(channel), "channel": channel, "message": message}
+    return {"ok": True, "sms_sent": bool(channel), "email_sent": bool(email_ok), "channel": channel, "message": message}
 
 
 # ---------------------------------------------------------------- exams & results
