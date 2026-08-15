@@ -32,6 +32,7 @@ import ChangePassword from "@/pages/ChangePassword";
 import AIAssistant from "@/pages/AIAssistant";
 import Certificates from "@/pages/Certificates";
 import Analytics from "@/pages/Analytics";
+import NotificationCenter from "@/pages/NotificationCenter";
 import ClassFees from "@/pages/ClassFees";
 import VerifyCertificate from "@/pages/VerifyCertificate";
 import { Loader } from "@/components/common";
@@ -76,6 +77,7 @@ function App() {
               <Route index element={<Navigate to="/app/dashboard" replace />} />
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="analytics" element={<Analytics />} />
+              <Route path="notifications" element={<NotificationCenter />} />
               <Route path="students" element={<Students />} />
               <Route path="students/:id" element={<StudentDetail />} />
               <Route path="batches" element={<Batches />} />

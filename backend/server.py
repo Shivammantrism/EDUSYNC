@@ -1309,6 +1309,16 @@ async def mark_notifications_read(user=Depends(get_current_user)):
     return {"ok": True}
 
 
+@api.get("/notifications/history")
+async def notifications_history(kind: str = "all", user=Depends(get_current_user)):
+    q = {"recipient_id": user["id"]}
+    kmap = {"fees": ["fee", "fee_paid"], "attendance": ["attendance", "absent"], "certificates": ["certificate"]}
+    if kind in kmap:
+        q["type"] = {"$in": kmap[kind]}
+    docs = await db.notifications.find(q, {"_id": 0}).sort("created_at", -1).to_list(300)
+    return {"items": docs, "count": len(docs)}
+
+
 @api.get("/students/{sid}")
 async def get_student(sid: str, user=Depends(get_current_user)):
     if user["role"] in ("student", "parent") and user["id"] != sid:
@@ -2913,19 +2923,35 @@ async def principal_dashboard(user=Depends(require("principal"))):
             "recent_students": recent_students, "recent_complaints": recent_complaints}
 
 
+def _months_between(a, b):
+    ya, ma = int(a[:4]), int(a[5:7]); yb, mb = int(b[:4]), int(b[5:7])
+    out = []; y, m = ya, ma
+    while (y, m) <= (yb, mb) and len(out) < 24:
+        out.append(f"{y:04d}-{m:02d}")
+        m += 1
+        if m > 12:
+            m = 1; y += 1
+    return out
+
+
 @api.get("/dashboard/analytics")
-async def analytics_dashboard(user=Depends(require("principal"))):
+async def analytics_dashboard(months: int = 6, from_month: str = None, to_month: str = None, user=Depends(require("principal"))):
     iid = user["institute_id"]
+    if from_month and to_month:
+        months_list = _months_between(from_month[:7], to_month[:7]) or [datetime.now().strftime("%Y-%m")]
+    else:
+        months = max(1, min(int(months or 6), 24))
+        months_list = [(datetime.now() - timedelta(days=30 * i)).strftime("%Y-%m") for i in range(months - 1, -1, -1)]
+    month_set = set(months_list)
     batches = await db.batches.find({"institute_id": iid}, {"_id": 0, "id": 1, "name": 1, "class_name": 1}).to_list(500)
     bname = {b["id"]: (b.get("name") or b.get("class_name") or "Class") for b in batches}
     students = await db.students.find({"institute_id": iid}, {"_id": 0, "id": 1, "batch_id": 1}).to_list(20000)
     sbatch = {s["id"]: s.get("batch_id", "") for s in students}
 
-    # fee trend — last 6 months: billed vs collected
+    # fee trend — billed vs collected over the selected range
     fee_trend = []
     tot_billed = tot_collected = 0.0
-    for i in range(5, -1, -1):
-        m = (datetime.now() - timedelta(days=30 * i)).strftime("%Y-%m")
+    for m in months_list:
         recs = await db.fees.find({"institute_id": iid, "month": m}, {"_id": 0, "amount": 1, "paid_amount": 1}).to_list(20000)
         billed = sum(float(r.get("amount", 0) or 0) for r in recs)
         collected = sum(float(r.get("paid_amount", 0) or 0) for r in recs)
@@ -2944,16 +2970,20 @@ async def analytics_dashboard(user=Depends(require("principal"))):
         pt = grid.get(k, [0, 0]); pt[0] += 1 if a.get("status") == "present" else 0; pt[1] += 1; grid[k] = pt
     heat_rows = []
     for b in batches:
-        row = {"class": bname[b["id"]], "cells": []}
+        row = {"class": bname[b["id"]], "batch_id": b["id"], "cells": []}
         for dday in days:
             p, t = grid.get((b["id"], dday), [0, 0])
             row["cells"].append(round(p / t * 100) if t else None)
         heat_rows.append(row)
 
-    # class-wise performance — avg exam %
-    results = await db.results.find({"institute_id": iid}, {"_id": 0, "student_id": 1, "percentage": 1}).to_list(200000)
+    # class-wise performance — avg exam % (exams within range; undated exams always counted)
+    exdate = {e["id"]: (e.get("exam_date") or "")[:7] for e in await db.exams.find({"institute_id": iid}, {"_id": 0, "id": 1, "exam_date": 1}).to_list(5000)}
+    results = await db.results.find({"institute_id": iid}, {"_id": 0, "student_id": 1, "percentage": 1, "exam_id": 1}).to_list(200000)
     perf_sum, perf_cnt = {}, {}
     for r in results:
+        em = exdate.get(r.get("exam_id"), "")
+        if em and em not in month_set:
+            continue
         b = sbatch.get(r["student_id"], "")
         perf_sum[b] = perf_sum.get(b, 0) + r["percentage"]; perf_cnt[b] = perf_cnt.get(b, 0) + 1
     class_perf = [{"class": bname[b], "avg": round(perf_sum[b] / perf_cnt[b], 1), "count": perf_cnt[b]}
@@ -2978,9 +3008,23 @@ async def analytics_dashboard(user=Depends(require("principal"))):
 
     return {"fee_trend": fee_trend, "collection_rate": collection_rate,
             "total_billed": round(tot_billed, 2), "total_collected": round(tot_collected, 2),
-            "heatmap": {"days": [d[5:] for d in days], "rows": heat_rows},
+            "heatmap": {"days": [d[5:] for d in days], "full_days": days, "rows": heat_rows},
             "class_performance": class_perf, "defaulters": defaulters,
-            "total_due": total_due, "total_defaulters": total_defaulters}
+            "total_due": total_due, "total_defaulters": total_defaulters,
+            "period": {"count": len(months_list), "from": months_list[0], "to": months_list[-1]}}
+
+
+@api.get("/attendance/absentees")
+async def attendance_absentees(batch_id: str, date_str: str, user=Depends(require("principal", "teacher"))):
+    recs = await db.attendance.find({"institute_id": user["institute_id"], "batch_id": batch_id, "date": date_str, "status": "absent"},
+                                    {"_id": 0, "student_id": 1, "student_name": 1}).to_list(2000)
+    out = []
+    for r in recs:
+        stu = await db.students.find_one({"id": r.get("student_id")}, {"_id": 0, "student_id": 1, "roll_no": 1, "parent_phone": 1}) or {}
+        out.append({"name": r.get("student_name", ""), "student_id_code": stu.get("student_id", ""),
+                    "roll_no": stu.get("roll_no", ""), "parent_phone": stu.get("parent_phone", "")})
+    out.sort(key=lambda x: str(x.get("roll_no") or ""))
+    return {"date": date_str, "count": len(out), "students": out}
 
 
 @api.get("/students/{sid}/insights")
@@ -4074,6 +4118,41 @@ async def migrate_ids():
                 f_seq += 1
                 await db.users.update_one({"id": t["id"]}, {"$set": {"faculty_id": f"{code}{year}T{f_seq:03d}"}})
         await db.institutes.update_one({"id": iid}, {"$set": {"code": code, "student_seq": s_seq, "faculty_seq": f_seq}})
+
+
+@app.on_event("startup")
+async def startup():
+    try:
+        init_storage()
+        logger.info("Storage initialized")
+    except Exception as e:
+        logger.error(f"Storage init failed: {e}")
+    try:
+        await seed()
+    except Exception as e:
+        logger.error(f"Seed failed: {e}")
+    try:
+        await migrate_ids()
+    except Exception as e:
+        logger.error(f"ID migration failed: {e}")
+    try:
+        await tag_sensitive_data()
+    except Exception as e:
+        logger.error(f"Data governance tagging failed: {e}")
+    try:
+        await ensure_super_admin()
+    except Exception as e:
+        logger.error(f"Super admin seed failed: {e}")
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    client.close()
+
+
+@api.get("/")
+async def root():
+    return {"message": "EduSync API by Privam Solutions"}
 
 
 @app.on_event("startup")

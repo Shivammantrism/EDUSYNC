@@ -27,6 +27,8 @@ const NOTIF_META = {
 };
 
 function NotificationBell() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [data, setData] = useState({ count: 0, items: [] });
   const [error, setError] = useState(false);
@@ -136,6 +138,12 @@ function NotificationBell() {
                 })
               )}
             </div>
+            {["student", "parent"].includes(user?.role) && (
+              <button onClick={() => { setOpen(false); navigate("/app/notifications"); }} data-testid="view-all-notifications"
+                className="block w-full text-center text-xs font-semibold text-blue-600 hover:bg-slate-50 py-3 border-t border-slate-100">
+                View all notifications
+              </button>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -185,6 +193,7 @@ const NAV = {
   ],
   student: [
     ["/app/dashboard", "Dashboard", LayoutDashboard, "dashboard"],
+    ["/app/notifications", "Notifications", Bell, "announcements"],
     ["/app/attendance", "My Attendance", CalendarCheck, "attendance"],
     ["/app/quizzes", "Online Tests", ListChecks, "quizzes"],
     ["/app/homework", "Homework", BookOpen, "homework"],
@@ -195,6 +204,7 @@ const NAV = {
   ],
   parent: [
     ["/app/dashboard", "Dashboard", LayoutDashboard, "dashboard"],
+    ["/app/notifications", "Notifications", Bell, "announcements"],
     ["/app/fees", "Fees & Receipts", Wallet, "fees"],
     ["/app/complaints", "Message Teacher", MessageSquareWarning, "complaints"],
     ["/app/idcard", "Digital ID Card", IdCard, "idcard"],
