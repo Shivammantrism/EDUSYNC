@@ -118,6 +118,7 @@ export default function Fees() {
       <PageHeader title={isPrincipal ? "Fee Management" : "Fees & Receipts"} subtitle={`${money(totalPending)} outstanding`} actions={
         isPrincipal && (
           <div className="flex flex-wrap gap-2">
+            <Button data-testid="defaulter-report-btn" variant="outline" onClick={() => downloadPdf("/fees/defaulters-report")}><Download className="h-4 w-4 mr-2" />Defaulter Report</Button>
             <Button data-testid="remind-all-btn" variant="outline" onClick={remindAll}><BellRing className="h-4 w-4 mr-2" />Remind Overdue</Button>
             <Dialog open={compOpen} onOpenChange={setCompOpen}>
               <DialogTrigger asChild><Button data-testid="manage-components-btn" variant="outline"><Settings2 className="h-4 w-4 mr-2" />Fee Structure</Button></DialogTrigger>

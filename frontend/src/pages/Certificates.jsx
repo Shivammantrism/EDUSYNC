@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import api, { API } from "@/lib/api";
+import api, { API, fileUrl } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
 import { PageHeader, Loader, Empty } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +13,8 @@ import { Award, Download, Link2 } from "lucide-react";
 const TYPES = [["achievement", "Achievement"], ["participation", "Participation"], ["sports", "Sports"], ["bonafide", "Bonafide"], ["character", "Character"], ["transfer", "Transfer"]];
 
 export default function Certificates() {
+  const { institute, refreshInstitute } = useAuth();
+  const [sealBusy, setSealBusy] = useState(false);
   const [students, setStudents] = useState([]);
   const [certs, setCerts] = useState(null);
   const [form, setForm] = useState({ student_id: "", type: "bonafide", session: "2025-26", remarks: "", signatory_name: "", signatory_designation: "" });
@@ -35,6 +38,17 @@ export default function Certificates() {
     catch (e) { toast.error("Could not generate certificate"); } finally { setBusy(false); }
   };
   const copyLink = (code) => { navigator.clipboard.writeText(`${window.location.origin}/verify-cert/${code}`); toast.success("Verification link copied"); };
+  const uploadSeal = async (file) => {
+    if (!file) return;
+    setSealBusy(true);
+    try {
+      const fd = new FormData(); fd.append("file", file);
+      const { data } = await api.post("/upload", fd);
+      await api.put("/institute", { seal_url: data.url, seal_path: data.path });
+      await refreshInstitute?.();
+      toast.success("Seal / signature updated — it will appear on new certificates");
+    } catch (e) { toast.error("Could not upload seal"); } finally { setSealBusy(false); }
+  };
   const doBulk = async () => {
     if (!bulkBatch) return toast.error("Select a class");
     setBulkBusy(true);
@@ -47,6 +61,19 @@ export default function Certificates() {
     <div>
       <PageHeader title="Certificate Generator" subtitle="Branded, QR-verified certificates" />
       <Card className="p-6 mb-6 border-slate-200" data-testid="cert-form">
+        <div className="flex items-center gap-3 mb-4 pb-4 border-b border-slate-100">
+          <div className="h-14 w-14 rounded-xl border border-slate-200 bg-slate-50 grid place-items-center overflow-hidden shrink-0">
+            {institute?.seal_url ? <img src={fileUrl(institute.seal_url)} alt="seal" className="h-full w-full object-contain" data-testid="cert-seal-preview" /> : <span className="text-[10px] text-slate-400 text-center px-1">No seal</span>}
+          </div>
+          <div className="min-w-0">
+            <p className="font-semibold text-slate-800 text-sm">Official Seal / Signature</p>
+            <p className="text-xs text-slate-400">Uploaded once, stamped on every certificate (falls back to logo)</p>
+          </div>
+          <label className="ml-auto text-sm px-3 py-2 border rounded-lg hover:bg-slate-50 cursor-pointer inline-flex items-center gap-2" data-testid="cert-seal-upload">
+            {sealBusy ? "Uploading…" : "Upload"}
+            <input type="file" accept="image/*" className="hidden" onChange={(e) => uploadSeal(e.target.files[0])} />
+          </label>
+        </div>
         <div className="grid md:grid-cols-2 gap-4">
           <div><Label>Student</Label>
             <Select value={form.student_id} onValueChange={(v) => setForm({ ...form, student_id: v })}>

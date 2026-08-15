@@ -288,6 +288,16 @@ async def notify_parent_async(phone, body):
     return await asyncio.to_thread(notify_parent, phone, body)
 
 
+def _seal_bytes(inst):
+    try:
+        if inst and inst.get("seal_path"):
+            data, _ = get_object(inst["seal_path"])
+            return data
+    except Exception as e:
+        logger.warning(f"institute seal fetch failed: {e}")
+    return _logo_bytes(inst)
+
+
 def _logo_bytes(inst):
     try:
         if inst and inst.get("logo_path"):
@@ -3151,6 +3161,59 @@ async def delete_fee_structure(fsid: str, user=Depends(require("principal"))):
     return {"ok": True}
 
 
+@api.get("/fees/defaulters-report")
+async def defaulters_report(user=Depends(require("principal"))):
+    fees = await db.fees.find({"institute_id": user["institute_id"], "status": {"$ne": "paid"}}, {"_id": 0}).to_list(20000)
+    due_by_student = {}
+    for f in fees:
+        bal = float(f.get("amount", 0) or 0) - float(f.get("paid_amount", 0) or 0)
+        if bal > 0:
+            due_by_student[f["student_id"]] = due_by_student.get(f["student_id"], 0) + bal
+    if not due_by_student:
+        raise HTTPException(404, "No outstanding dues — everyone is paid up!")
+    students = await db.students.find({"id": {"$in": list(due_by_student.keys())}}, {"_id": 0, "password_hash": 0}).to_list(20000)
+    batches = {b["id"]: b for b in await db.batches.find({"institute_id": user["institute_id"]}, {"_id": 0}).to_list(1000)}
+    groups = {}
+    for s in students:
+        b = batches.get(s.get("batch_id", ""), {})
+        cls = b.get("name") or b.get("class_name") or "Unassigned"
+        groups.setdefault(cls, []).append((s, due_by_student.get(s["id"], 0)))
+    inst = await db.institutes.find_one({"id": user["institute_id"]})
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import cm
+    from reportlab.lib import colors
+    from reportlab.pdfgen import canvas
+    buf = io.BytesIO(); c = canvas.Canvas(buf, pagesize=A4); w, h = A4
+    draw_letterhead(c, inst, w, h, "Fee Defaulters Report")
+    y = h - 4.4 * cm
+    grand = 0
+    for cls in sorted(groups.keys()):
+        rows = sorted(groups[cls], key=lambda x: -x[1])
+        if y < 4 * cm:
+            c.showPage(); y = h - 3 * cm
+        c.setFillColor(colors.HexColor("#0b1e3b")); c.setFont("Helvetica-Bold", 12)
+        c.drawString(2 * cm, y, cls); y -= 0.5 * cm
+        c.setFillColor(colors.HexColor("#64748B")); c.setFont("Helvetica-Bold", 8.5)
+        c.drawString(2 * cm, y, "ROLL"); c.drawString(3.4 * cm, y, "STUDENT"); c.drawString(9.5 * cm, y, "CONTACT"); c.drawRightString(w - 2 * cm, y, "DUE (INR)"); y -= 0.15 * cm
+        c.setStrokeColor(colors.HexColor("#e2e8f0")); c.line(2 * cm, y, w - 2 * cm, y); y -= 0.45 * cm
+        sub = 0
+        for s, due in rows:
+            if y < 2.5 * cm:
+                c.showPage(); y = h - 3 * cm
+            c.setFillColor(colors.HexColor("#1f2937")); c.setFont("Helvetica", 9.5)
+            c.drawString(2 * cm, y, str(s.get("roll_no") or "-")); c.drawString(3.4 * cm, y, (s.get("name") or "")[:40])
+            c.drawString(9.5 * cm, y, str(s.get("parent_phone") or s.get("emergency_contact") or "-"))
+            c.drawRightString(w - 2 * cm, y, f"{due:,.0f}"); y -= 0.5 * cm
+            sub += due
+        grand += sub
+        c.setFont("Helvetica-Bold", 9.5); c.setFillColor(colors.HexColor("#b91c1c"))
+        c.drawRightString(w - 2 * cm, y, f"Subtotal: {sub:,.0f}"); y -= 0.9 * cm
+    c.setFont("Helvetica-Bold", 13); c.setFillColor(colors.HexColor("#0b1e3b"))
+    c.drawRightString(w - 2 * cm, max(y, 2 * cm), f"Total Outstanding: INR {grand:,.0f}")
+    c.showPage(); c.save(); buf.seek(0)
+    return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": "attachment; filename=fee-defaulters.pdf"})
+
+
 @api.post("/fees/{fee_id}/pay-partial")
 async def pay_partial(fee_id: str, body: PartialPay, user=Depends(require("principal"))):
     fee = await db.fees.find_one({"id": fee_id, "institute_id": user["institute_id"]})
@@ -3368,7 +3431,7 @@ async def certificate_pdf(cid: str, request: Request, user=Depends(require("prin
     sig_name = cert.get("signatory_name") or "Principal"
     sig_desig = cert.get("signatory_designation") or "Authorised Signatory"
     try:
-        lb = _logo_bytes(inst)
+        lb = _seal_bytes(inst)
         if lb:
             c.saveState(); c.setFillAlpha(0.9)
             c.drawImage(ImageReader(io.BytesIO(lb)), 3.15 * cm, 3.4 * cm, width=1.5 * cm, height=1.5 * cm, mask='auto', preserveAspectRatio=True)
@@ -3554,7 +3617,7 @@ async def get_institute(user=Depends(get_current_user)):
 
 @api.put("/institute")
 async def update_institute(payload: dict, user=Depends(require("principal"))):
-    allowed = {"name", "address", "phone", "email", "logo_url", "logo_path", "id_template", "upi_id", "metro", "collection_target", "code"}
+    allowed = {"name", "address", "phone", "email", "logo_url", "logo_path", "seal_url", "seal_path", "id_template", "upi_id", "metro", "collection_target", "code"}
     upd = {k: v for k, v in payload.items() if k in allowed and v is not None}
     if "code" in upd:
         clean = "".join(c for c in str(upd["code"]) if c.isalnum()).upper()[:4]
