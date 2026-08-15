@@ -21,14 +21,15 @@ Key choices: teachers see all students & classes but student CONTACT+FEE stay pr
 - Classes & Sections (Batches.jsx): Section is optional ("Class 11" and "Class 11 - A" both supported); principal can Edit a class and Add students from the global list via new `POST /batches/{bid}/assign` (validates class exists → 404 otherwise).
 - Teacher sidebar gains "Classes & Sections" (read-only: view classes/students + timetable PDF; no create/edit/delete/email).
 
-### Phase 2 — TODO (Timetable & Scheduler)
-- Scheduler asks Class → per-class Subjects → Teachers before generating (editable anytime).
-- Principal-defined period timings + multiple/custom lunch breaks; inline click-a-cell manual edit of any timetable slot.
-- Premium Timetable PDF with logo, name, address & contact on top.
-- Teacher "Personal Schedule" = all their classes/times (fix GET /timetable to filter by teacher_id in entries, not class-teacher batches); student sees only their class.
+### Phase 2 — Timetable & Scheduler — DONE & verified (curl + UI)
+- New per-institute config `db.tt_config` (days, ordered periods with `is_break`, and `class_subjects` map). Endpoints: GET/POST `/timetable/config`, rewritten POST `/timetable/generate` (uses per-class subjects+teachers, custom period timings, and lunch/break slots; keeps teacher no-double-book + skips approved-leave teachers), PUT `/timetable/cell` (manual add/edit/clear of any slot, principal-only).
+- Frontend Timetable.jsx rewritten: "Setup & Generate" dialog (working days, add/remove Period or Break rows with custom labels, and Subjects+Teachers per class); click-a-cell manual editing when a class is selected; amber Break rows in the grid.
+- Personal schedules: GET `/timetable` (+PDF) for a teacher now filters by their `teacher_id` in entries → "My Personal Schedule" across all classes they teach; students still see only their own class.
+- Premium Timetable PDF: `draw_letterhead` already renders institute logo + name + address + phone/email on top (confirmed) — applies to receipts, certificates, salary slips & timetables.
 
-### Phase 3 — TODO (Meeting Confirmation, new module)
-- Principal creates meeting (title/date/time/agenda/invite teachers); teachers confirm availability (Available / Not available + note); principal sees confirmations.
+### Phase 3 — Meeting Confirmation — TODO (not built yet)
+### Automated Salary & Leave Policy — TODO (not built yet)
+- Note: `_gen_salary` already computes LWP from rejected leaves + absent working days and supports principal adjust (extra_deductions/extra_allowance) + Approve & Pay. Remaining: principal-set monthly paid-leave quota per teacher, automatic proportional pay-cut for excess leave using (base/days_in_month)*excess, editable base components (HRA/allowances) & bonuses per slip, draft→Approve&Pay flow surfacing to teacher.
 
 
 

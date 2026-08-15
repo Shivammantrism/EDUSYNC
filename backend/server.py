@@ -20,7 +20,7 @@ import calendar
 import random
 import httpx
 from datetime import datetime, timezone, timedelta, date
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 import bcrypt
 import jwt
@@ -688,6 +688,32 @@ class TimetableConfig(BaseModel):
     periods: List[str] = []
     teacher_ids: List[str] = []
     use_ai: bool = True
+
+
+class PeriodSlot(BaseModel):
+    label: str
+    is_break: bool = False
+
+
+class ClassSubject(BaseModel):
+    subject: str
+    teacher_id: Optional[str] = ""
+
+
+class TimetableConfigV2(BaseModel):
+    days: List[str] = []
+    periods: List[PeriodSlot] = []
+    class_subjects: Dict[str, List[ClassSubject]] = {}
+    use_ai: bool = False
+
+
+class CellEdit(BaseModel):
+    batch_id: str
+    day: str
+    slot: str
+    subject: Optional[str] = ""
+    teacher_id: Optional[str] = ""
+    room: Optional[str] = ""
 
 
 class ComplaintIn(BaseModel):
@@ -1601,7 +1627,7 @@ async def get_attendance(user=Depends(get_current_user), batch_id: Optional[str]
     if user["role"] == "student":
         q["student_id"] = user["id"]
     elif user["role"] == "teacher":
-        q["batch_id"] = {"$in": await teacher_batches(user)}
+        q["teacher_id"] = user["id"]
     elif batch_id:
         q["batch_id"] = batch_id
     if date_str:
@@ -1879,7 +1905,7 @@ async def list_exams(user=Depends(get_current_user), batch_id: Optional[str] = N
         s = await db.students.find_one({"id": user["id"]})
         q["batch_id"] = s.get("batch_id", "")
     elif user["role"] == "teacher":
-        q["batch_id"] = {"$in": await teacher_batches(user)}
+        q["teacher_id"] = user["id"]
     elif batch_id:
         q["batch_id"] = batch_id
     return await db.exams.find(q, {"_id": 0}).sort("exam_date", -1).to_list(1000)
@@ -2518,91 +2544,145 @@ async def get_timetable(user=Depends(get_current_user), batch_id: Optional[str] 
         s = await db.students.find_one({"id": user["id"]})
         q["batch_id"] = s.get("batch_id", "")
     elif user["role"] == "teacher":
-        q["batch_id"] = {"$in": await teacher_batches(user)}
+        q["teacher_id"] = user["id"]
     elif batch_id:
         q["batch_id"] = batch_id
     return await db.timetable.find(q, {"_id": 0}).to_list(500)
 
 
+def _tt_default_periods():
+    return [{"label": s, "is_break": False} for s in SLOTS]
+
+
+async def _get_tt_config(iid):
+    cfg = await db.tt_config.find_one({"institute_id": iid}, {"_id": 0})
+    if not cfg:
+        cfg = {"institute_id": iid, "days": DAYS[:5], "periods": _tt_default_periods(), "class_subjects": {}}
+    if not cfg.get("periods"):
+        cfg["periods"] = _tt_default_periods()
+    if not cfg.get("days"):
+        cfg["days"] = DAYS[:5]
+    return cfg
+
+
+@api.get("/timetable/config")
+async def get_tt_config(user=Depends(require("principal", "teacher"))):
+    return await _get_tt_config(user["institute_id"])
+
+
+@api.post("/timetable/config")
+async def save_tt_config(body: TimetableConfigV2, user=Depends(require("principal"))):
+    doc = {"institute_id": user["institute_id"], "days": body.days or DAYS[:5],
+           "periods": [p.model_dump() for p in body.periods] or _tt_default_periods(),
+           "class_subjects": {k: [cs.model_dump() for cs in v] for k, v in body.class_subjects.items()},
+           "updated_at": now_iso()}
+    await db.tt_config.update_one({"institute_id": user["institute_id"]}, {"$set": doc}, upsert=True)
+    return doc
+
+
 @api.post("/timetable/generate")
-async def generate_timetable(body: Optional[TimetableConfig] = None, user=Depends(require("principal"))):
-    body = body or TimetableConfig()
-    days = body.days or DAYS[:5]
-    periods = body.periods or SLOTS
+async def generate_timetable(body: Optional[TimetableConfigV2] = None, user=Depends(require("principal"))):
+    saved = await _get_tt_config(user["institute_id"])
+    days = (body.days if body and body.days else saved["days"]) or DAYS[:5]
+    periods = ([p.model_dump() for p in body.periods] if body and body.periods else saved["periods"]) or _tt_default_periods()
+    class_subjects = (body.class_subjects and {k: [cs.model_dump() for cs in v] for k, v in body.class_subjects.items()}) or saved.get("class_subjects", {})
+    use_ai = bool(body.use_ai) if body else False
+    await db.tt_config.update_one({"institute_id": user["institute_id"]},
+                                  {"$set": {"institute_id": user["institute_id"], "days": days, "periods": periods, "class_subjects": class_subjects, "updated_at": now_iso()}}, upsert=True)
     batches = await db.batches.find(scope(user), {"_id": 0}).to_list(1000)
     teachers = await db.users.find({"institute_id": user["institute_id"], "role": "teacher"}, {"_id": 0}).to_list(1000)
-    if body.teacher_ids:
-        teachers = [t for t in teachers if t["id"] in body.teacher_ids]
+    tname = {t["id"]: t["name"] for t in teachers}
     on_leave = set()
     tstr = today_str()
     for lv in await db.leaves.find({"institute_id": user["institute_id"], "status": "approved"}, {"_id": 0}).to_list(1000):
         if lv["from_date"] <= tstr <= lv["to_date"]:
             on_leave.add(lv["teacher_id"])
-    avail = [t for t in teachers if t["id"] not in on_leave]
-    avail_ids = {t["id"] for t in avail}
-    tname = {t["id"]: t["name"] for t in teachers}
-    pool = []
-    for t in avail:
-        subs = t.get("subjects") or ([t.get("subject")] if t.get("subject") else [])
-        for s in subs:
-            if s:
-                pool.append({"subject": s, "teacher_id": t["id"], "teacher_name": t["name"]})
 
-    def batch_pool(b):
-        own = []
-        if b.get("teacher_id") in avail_ids:
-            own.append({"subject": b.get("subject") or "General", "teacher_id": b["teacher_id"], "teacher_name": tname.get(b["teacher_id"], "")})
-        combo = own + pool
-        return combo or [{"subject": b.get("subject") or "General", "teacher_id": b.get("teacher_id", ""), "teacher_name": tname.get(b.get("teacher_id", ""), "TBD")}]
+    def class_pool(b):
+        cs = class_subjects.get(b["id"]) or []
+        pool = [{"subject": (c.get("subject") or "General"), "teacher_id": c.get("teacher_id") or ""} for c in cs if c.get("subject")]
+        if not pool:
+            pool = [{"subject": b.get("subject") or "General", "teacher_id": b.get("teacher_id") or ""}]
+        return pool
 
     await db.timetable.delete_many(scope(user))
-    busy = set()       # (day, period, teacher_id) -> no teacher double-booking
-    room_busy = set()  # (day, period, room)
+    busy = set()
+    room_busy = set()
     entries = []
     conflicts = 0
     for b in batches:
-        cand = batch_pool(b)
+        pool = class_pool(b)
         room = b.get("room") or ""
         idx = 0
         for day in days:
-            for period in periods:
+            for p in periods:
+                label = p.get("label") if isinstance(p, dict) else p
+                is_break = bool(p.get("is_break")) if isinstance(p, dict) else False
+                if is_break:
+                    entries.append({"id": str(uuid.uuid4()), "batch_id": b["id"], "batch_name": b["name"], "day": day,
+                                    "slot": label, "subject": label or "Break", "room": "", "teacher_id": "", "teacher_name": "",
+                                    "is_break": True, "institute_id": user["institute_id"], "created_at": now_iso()})
+                    continue
                 chosen = None
-                for k in range(len(cand)):
-                    c = cand[(idx + k) % len(cand)]
-                    tid = c["teacher_id"]
-                    if tid and (day, period, tid) in busy:
+                for k in range(len(pool)):
+                    cnd = pool[(idx + k) % len(pool)]
+                    tid = cnd["teacher_id"]
+                    if tid and tid in on_leave:
                         continue
-                    if room and (day, period, room) in room_busy:
+                    if tid and (day, label, tid) in busy:
                         continue
-                    chosen = c
+                    if room and (day, label, room) in room_busy:
+                        continue
+                    chosen = cnd
                     idx = idx + k + 1
                     break
                 if chosen is None:
                     conflicts += 1
                     continue
                 if chosen["teacher_id"]:
-                    busy.add((day, period, chosen["teacher_id"]))
+                    busy.add((day, label, chosen["teacher_id"]))
                 if room:
-                    room_busy.add((day, period, room))
+                    room_busy.add((day, label, room))
                 entries.append({"id": str(uuid.uuid4()), "batch_id": b["id"], "batch_name": b["name"], "day": day,
-                                "slot": period, "subject": chosen["subject"], "room": room,
-                                "teacher_id": chosen["teacher_id"], "teacher_name": chosen["teacher_name"] or "TBD",
-                                "institute_id": user["institute_id"], "created_at": now_iso()})
+                                "slot": label, "subject": chosen["subject"], "room": room,
+                                "teacher_id": chosen["teacher_id"], "teacher_name": tname.get(chosen["teacher_id"], "") or "TBD",
+                                "is_break": False, "institute_id": user["institute_id"], "created_at": now_iso()})
     ai_note = ""
-    if body.use_ai and entries:
+    if use_ai and entries:
         try:
             from emergentintegrations.llm.chat import LlmChat, UserMessage
             chat = LlmChat(api_key=EMERGENT_KEY, session_id=f"ttgen-{user['institute_id']}",
                            system_message="You are a school scheduling expert. In 2 short sentences, confirm the generated weekly timetable looks balanced and give one quick actionable tip. Plain text, no markdown.").with_model("gemini", "gemini-3-flash-preview")
-            ai_note = await chat.send_message(UserMessage(text=f"Generated {len(entries)} slots across {len(batches)} batches over days {days} and periods {periods}, with no teacher/room clashes. Comment briefly."))
+            ai_note = await chat.send_message(UserMessage(text=f"Generated {len(entries)} slots across {len(batches)} classes. Comment briefly."))
         except Exception as e:
             logger.warning(f"AI note failed: {e}")
-            ai_note = "Timetable generated with no teacher or room clashes. Tip: keep core subjects in the morning periods for better focus."
+            ai_note = "Timetable generated with no teacher or room clashes."
     if entries:
         await db.timetable.insert_many(entries)
-    for e in entries:
-        e.pop("_id", None)
-    return {"ok": True, "count": len(entries), "conflicts": conflicts, "ai_note": ai_note, "days": days, "periods": periods}
+    return {"ok": True, "count": len([e for e in entries if not e.get("is_break")]), "conflicts": conflicts, "ai_note": ai_note, "days": days, "periods": periods}
+
+
+@api.put("/timetable/cell")
+async def edit_tt_cell(body: CellEdit, user=Depends(require("principal"))):
+    q = {"institute_id": user["institute_id"], "batch_id": body.batch_id, "day": body.day, "slot": body.slot}
+    if not (body.subject or "").strip() and not (body.teacher_id or "").strip():
+        await db.timetable.delete_many(q)
+        return {"ok": True, "deleted": True}
+    b = await db.batches.find_one({"id": body.batch_id, "institute_id": user["institute_id"]}, {"_id": 0})
+    tname = ""
+    if body.teacher_id:
+        t = await db.users.find_one({"id": body.teacher_id, "institute_id": user["institute_id"]}, {"_id": 0})
+        tname = t.get("name", "") if t else ""
+    doc = {"batch_id": body.batch_id, "batch_name": (b or {}).get("name", ""), "day": body.day, "slot": body.slot,
+           "subject": body.subject or "", "teacher_id": body.teacher_id or "", "teacher_name": tname,
+           "room": body.room or (b or {}).get("room", ""), "is_break": False, "institute_id": user["institute_id"]}
+    existing = await db.timetable.find_one(q)
+    if existing:
+        await db.timetable.update_one({"id": existing["id"]}, {"$set": doc})
+        return await db.timetable.find_one({"id": existing["id"]}, {"_id": 0})
+    doc["id"] = str(uuid.uuid4()); doc["created_at"] = now_iso()
+    await db.timetable.insert_one(doc)
+    return await db.timetable.find_one({"id": doc["id"]}, {"_id": 0})
 
 
 @api.get("/timetable/pdf")
@@ -2612,7 +2692,7 @@ async def timetable_pdf(user=Depends(get_current_user), batch_id: Optional[str] 
         s = await db.students.find_one({"id": user["id"]})
         q["batch_id"] = s.get("batch_id", "") if s else ""
     elif user["role"] == "teacher":
-        q["batch_id"] = {"$in": await teacher_batches(user)}
+        q["teacher_id"] = user["id"]
     elif batch_id:
         q["batch_id"] = batch_id
     rows = await db.timetable.find(q, {"_id": 0}).to_list(3000)
