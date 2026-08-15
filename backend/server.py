@@ -470,6 +470,9 @@ class StudentIn(BaseModel):
     dob: Optional[str] = ""
     blood_group: Optional[str] = ""
     address: Optional[str] = ""
+    mother_name: Optional[str] = ""
+    emergency_contact: Optional[str] = ""
+    documents: Optional[list] = []
     batch_id: Optional[str] = ""
     password: Optional[str] = "student123"
     monthly_fee: float = Field(default=0, ge=0)
@@ -1082,7 +1085,7 @@ async def create_student(body: StudentIn, user=Depends(require("principal", "tea
     temp_password = gen_temp_password()
     doc = body.model_dump()
     doc.update({"id": sid, "student_id": student_id, "institute_id": user["institute_id"],
-                "password_hash": hash_pw(temp_password), "documents": [],
+                "password_hash": hash_pw(temp_password),
                 "created_at": now_iso(), "join_month": datetime.now().strftime("%Y-%m"),
                 "must_change_password": True,
                 "data_classification": "restricted", "pii_category": "minor_sensitive", "access_scope": "role_scoped",
@@ -1125,7 +1128,7 @@ async def resend_student_credentials(sid: str, user=Depends(require("principal",
 
 @api.put("/students/{sid}")
 async def update_student(sid: str, payload: dict, user=Depends(require("principal"))):
-    allowed = {"name", "age", "gender", "batch_id", "parent_name", "parent_phone", "parent_email", "monthly_fee", "photo_url", "template", "email", "dob", "blood_group", "address", "roll_no"}
+    allowed = {"name", "age", "gender", "batch_id", "parent_name", "parent_phone", "parent_email", "monthly_fee", "photo_url", "template", "email", "dob", "blood_group", "address", "roll_no", "mother_name", "emergency_contact", "documents"}
     upd = {k: v for k, v in payload.items() if k in allowed and v is not None}
     if upd.get("age") not in (None, ""):
         upd["age"] = int(upd["age"])
@@ -2434,46 +2437,52 @@ async def notify_low_attendance_parents(user=Depends(require("principal"))):
 
 
 # ---------------------------------------------------------------- report card PDF
-def _qr_sticker_pdf(items):
+def _qr_sticker_pdf(items, per_page=24, preset="standard"):
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import mm
     from reportlab.lib.utils import ImageReader
     from reportlab.lib import colors
     from reportlab.pdfgen import canvas
     import qrcode
+    grids = {12: (3, 4), 24: (4, 6), 30: (5, 6)}
+    cols, rows = grids.get(int(per_page), (4, 6))
+    avery = preset == "avery"
+    mx = (4.7 if avery else 8) * mm
+    my = (12.7 if avery else 10) * mm
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     W, H = A4
-    cols, rows = 4, 6
-    mx, my = 6 * mm, 10 * mm
     cw = (W - 2 * mx) / cols
     ch = (H - 2 * my) / rows
-    qr_sz = 26 * mm
-    per_page = cols * rows
+    per = cols * rows
+    qr_sz = max(14 * mm, min(cw * 0.7, ch - 11 * mm))
+    name_fs = 7 if per >= 30 else 8
+    sub_fs = 6 if per >= 30 else 7
     for i, it in enumerate(items):
-        pos = i % per_page
+        pos = i % per
         if i and pos == 0:
             c.showPage()
         r = pos // cols
         col = pos % cols
         x0 = mx + col * cw
         y_top = H - my - r * ch
-        c.setStrokeColor(colors.HexColor("#E2E8F0"))
-        c.setLineWidth(0.3)
-        c.rect(x0, y_top - ch, cw, ch, stroke=1, fill=0)
+        if not avery:
+            c.setStrokeColor(colors.HexColor("#E2E8F0"))
+            c.setLineWidth(0.3)
+            c.rect(x0, y_top - ch, cw, ch, stroke=1, fill=0)
         qimg = qrcode.make(it["qr"] or "EDUSYNC")
         bio = io.BytesIO()
         qimg.save(bio, format="PNG")
         bio.seek(0)
         qx = x0 + (cw - qr_sz) / 2
-        qy = y_top - qr_sz - 4 * mm
+        qy = y_top - qr_sz - 3 * mm
         c.drawImage(ImageReader(bio), qx, qy, width=qr_sz, height=qr_sz)
         c.setFillColor(colors.HexColor("#0F172A"))
-        c.setFont("Helvetica-Bold", 8)
-        c.drawCentredString(x0 + cw / 2, qy - 4 * mm, (it.get("name") or "")[:26])
-        c.setFont("Helvetica", 7)
+        c.setFont("Helvetica-Bold", name_fs)
+        c.drawCentredString(x0 + cw / 2, qy - 3.5 * mm, (it.get("name") or "")[:24])
+        c.setFont("Helvetica", sub_fs)
         c.setFillColor(colors.HexColor("#475569"))
-        c.drawCentredString(x0 + cw / 2, qy - 7.5 * mm, it.get("sub") or "")
+        c.drawCentredString(x0 + cw / 2, qy - 6.5 * mm, it.get("sub") or "")
     c.showPage()
     c.save()
     buf.seek(0)
@@ -2481,24 +2490,24 @@ def _qr_sticker_pdf(items):
 
 
 @api.get("/print/qr-stickers/students/{batch_id}")
-async def qr_stickers_students(batch_id: str, user=Depends(require("principal", "teacher"))):
+async def qr_stickers_students(batch_id: str, per_page: int = 24, preset: str = "standard", user=Depends(require("principal", "teacher"))):
     students = await db.students.find({"batch_id": batch_id, "institute_id": user["institute_id"]}, {"_id": 0}).sort("student_id", 1).to_list(2000)
     if not students:
         raise HTTPException(404, "No students in this batch")
     items = [{"qr": s.get("student_id", ""), "name": s.get("name", ""),
               "sub": f"Roll: {s.get('roll_no') or s.get('student_id', '-')}"} for s in students]
-    return Response(content=_qr_sticker_pdf(items), media_type="application/pdf",
+    return Response(content=_qr_sticker_pdf(items, per_page, preset), media_type="application/pdf",
                     headers={"Content-Disposition": "attachment; filename=qr-stickers-students.pdf"})
 
 
 @api.get("/print/qr-stickers/faculty")
-async def qr_stickers_faculty(user=Depends(require("principal"))):
+async def qr_stickers_faculty(per_page: int = 24, preset: str = "standard", user=Depends(require("principal"))):
     teachers = await db.users.find({"institute_id": user["institute_id"], "role": "teacher"}, {"_id": 0}).sort("faculty_id", 1).to_list(2000)
     if not teachers:
         raise HTTPException(404, "No faculty found")
     items = [{"qr": t.get("faculty_id", ""), "name": t.get("name", ""),
               "sub": f"Staff ID: {t.get('faculty_id', '-')}"} for t in teachers]
-    return Response(content=_qr_sticker_pdf(items), media_type="application/pdf",
+    return Response(content=_qr_sticker_pdf(items, per_page, preset), media_type="application/pdf",
                     headers={"Content-Disposition": "attachment; filename=qr-stickers-faculty.pdf"})
 
 

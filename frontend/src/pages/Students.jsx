@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { UserPlus, Users, Search, Upload, Loader2, KeyRound } from "lucide-react";
+import { UserPlus, Users, Search, Upload, Loader2, KeyRound, FileText } from "lucide-react";
 import CredentialsDialog from "@/components/CredentialsDialog";
 
 export default function Students() {
@@ -26,8 +26,9 @@ export default function Students() {
   const [editId, setEditId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [docUploading, setDocUploading] = useState(false);
   const [credResult, setCredResult] = useState(null);
-  const blank = { name: "", age: "", gender: "Male", batch_id: "", email: "", parent_name: "", parent_phone: "", parent_email: "", roll_no: "", dob: "", blood_group: "", address: "", monthly_fee: 2000, photo_url: "", template: "classic", password: "", parental_consent: true };
+  const blank = { name: "", age: "", gender: "Male", batch_id: "", email: "", parent_name: "", mother_name: "", parent_phone: "", emergency_contact: "", parent_email: "", roll_no: "", dob: "", blood_group: "", address: "", documents: [], monthly_fee: 2000, photo_url: "", template: "classic", password: "", parental_consent: true };
   const [form, setForm] = useState(blank);
 
   const load = () => api.get("/students").then((r) => setStudents(r.data));
@@ -58,7 +59,7 @@ export default function Students() {
     } catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
     finally { setSaving(false); }
   };
-  const openEdit = (s) => { setForm({ name: s.name || "", age: s.age || "", gender: s.gender || "Male", batch_id: s.batch_id || "", email: s.email || "", parent_name: s.parent_name || "", parent_phone: s.parent_phone || "", parent_email: s.parent_email || "", roll_no: s.roll_no || "", dob: s.dob || "", blood_group: s.blood_group || "", address: s.address || "", monthly_fee: s.monthly_fee || 0, photo_url: s.photo_url || "", template: s.template || "classic", password: "", parental_consent: true }); setEditId(s.id); setOpen(true); };
+  const openEdit = (s) => { setForm({ name: s.name || "", age: s.age || "", gender: s.gender || "Male", batch_id: s.batch_id || "", email: s.email || "", parent_name: s.parent_name || "", mother_name: s.mother_name || "", parent_phone: s.parent_phone || "", emergency_contact: s.emergency_contact || "", parent_email: s.parent_email || "", roll_no: s.roll_no || "", dob: s.dob || "", blood_group: s.blood_group || "", address: s.address || "", documents: s.documents || [], monthly_fee: s.monthly_fee || 0, photo_url: s.photo_url || "", template: s.template || "classic", password: "", parental_consent: true }); setEditId(s.id); setOpen(true); };
   const resend = async (s) => {
     try {
       const { data } = await api.post(`/students/${s.id}/resend-credentials`);
@@ -100,21 +101,28 @@ export default function Students() {
                     </Select>
                   </div>
                 </div>
-                <div><Label>Class</Label>
-                  <Select value={form.batch_id} onValueChange={(v) => setForm({ ...form, batch_id: v })}>
-                    <SelectTrigger data-testid="student-batch"><SelectValue placeholder="Select class" /></SelectTrigger>
-                    <SelectContent>{batches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}{b.class_name ? ` · ${b.class_name}${b.section ? "-" + b.section : ""}` : ""}</SelectItem>)}</SelectContent>
-                  </Select>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><Label>Class &amp; Section <span className="text-red-500">*</span></Label>
+                    <Select value={form.batch_id} onValueChange={(v) => setForm({ ...form, batch_id: v })}>
+                      <SelectTrigger data-testid="student-batch"><SelectValue placeholder="Select class" /></SelectTrigger>
+                      <SelectContent>{batches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}{b.class_name ? ` · ${b.class_name}${b.section ? "-" + b.section : ""}` : ""}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>
+                  <div><Label>Roll No <span className="text-red-500">*</span></Label><Input data-testid="student-roll-no" value={form.roll_no} onChange={(e) => setForm({ ...form, roll_no: e.target.value })} placeholder="e.g. 12" /></div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><Label>Parent Name</Label><Input data-testid="student-parent-name" value={form.parent_name} onChange={(e) => setForm({ ...form, parent_name: e.target.value })} /></div>
-                  <div><Label>Parent Phone</Label><Input data-testid="student-parent-phone" value={form.parent_phone} onChange={(e) => setForm({ ...form, parent_phone: e.target.value })} /></div>
+                  <div><Label>Father's Name</Label><Input data-testid="student-parent-name" value={form.parent_name} onChange={(e) => setForm({ ...form, parent_name: e.target.value })} /></div>
+                  <div><Label>Mother's Name</Label><Input data-testid="student-mother-name" value={form.mother_name} onChange={(e) => setForm({ ...form, mother_name: e.target.value })} /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><Label>Primary Contact</Label><Input data-testid="student-parent-phone" value={form.parent_phone} onChange={(e) => setForm({ ...form, parent_phone: e.target.value })} placeholder="Parent mobile" /></div>
+                  <div><Label>Emergency Contact <span className="text-red-500">*</span></Label><Input data-testid="student-emergency-contact" value={form.emergency_contact} onChange={(e) => setForm({ ...form, emergency_contact: e.target.value })} placeholder="Alternate mobile" /></div>
                 </div>
                 <div><Label>Parent / Guardian Email <span className="text-xs font-normal text-slate-400">(receipts & login)</span></Label><Input data-testid="student-parent-email" type="email" value={form.parent_email} onChange={(e) => setForm({ ...form, parent_email: e.target.value })} placeholder="parent@example.com" /></div>
                 <div><Label>Student Email <span className="text-xs font-normal text-slate-400">(optional — gets own login)</span></Label><Input data-testid="student-email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="student@example.com" /></div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><Label>Date of Birth</Label><Input data-testid="student-dob" type="date" value={form.dob} onChange={(e) => setForm({ ...form, dob: e.target.value })} /></div>
-                  <div><Label>Blood Group</Label>
+                  <div><Label>Date of Birth <span className="text-red-500">*</span></Label><Input data-testid="student-dob" type="date" value={form.dob} onChange={(e) => setForm({ ...form, dob: e.target.value })} /></div>
+                  <div><Label>Blood Group <span className="text-red-500">*</span></Label>
                     <Select value={form.blood_group} onValueChange={(v) => setForm({ ...form, blood_group: v })}>
                       <SelectTrigger data-testid="student-blood-group"><SelectValue placeholder="Select" /></SelectTrigger>
                       <SelectContent>{["A+","A-","B+","B-","O+","O-","AB+","AB-"].map((bg) => <SelectItem key={bg} value={bg}>{bg}</SelectItem>)}</SelectContent>
@@ -122,6 +130,23 @@ export default function Students() {
                   </div>
                 </div>
                 <div><Label>Home Address</Label><Input data-testid="student-address" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Full residential address" /></div>
+                <div>
+                  <Label>Documents <span className="text-xs font-normal text-slate-400">(Birth Certificate, etc. — PDF/JPG)</span></Label>
+                  <label className="mt-1.5 flex items-center gap-2 text-sm px-3 py-2 border rounded-lg hover:bg-slate-50 cursor-pointer w-fit" data-testid="student-doc-upload-label">
+                    {docUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />} Upload Document
+                    <input data-testid="student-doc-input" type="file" accept=".pdf,image/*" className="hidden" onChange={(e) => e.target.files[0] && uploadDoc(e.target.files[0])} />
+                  </label>
+                  {(form.documents || []).length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {form.documents.map((dd, i) => (
+                        <div key={i} data-testid={`student-doc-${i}`} className="flex items-center justify-between text-xs bg-slate-50 rounded px-2.5 py-1.5">
+                          <span className="truncate">{dd.name}</span>
+                          <button type="button" onClick={() => setForm((f) => ({ ...f, documents: f.documents.filter((_, j) => j !== i) }))} className="text-red-500 hover:underline ml-2 shrink-0">Remove</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div><Label>Monthly Fee (₹)</Label><Input data-testid="student-monthly-fee" type="number" value={form.monthly_fee} onChange={(e) => setForm({ ...form, monthly_fee: e.target.value })} /></div>
                   <div><Label>ID Card Template</Label>
@@ -143,7 +168,7 @@ export default function Students() {
                   </label>
                 )}
               </div>
-              <DialogFooter><Button data-testid="save-student-btn" onClick={save} disabled={saving || !form.name} className="btn-gradient">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : (editId ? "Save Changes" : "Register")}</Button></DialogFooter>
+              <DialogFooter><Button data-testid="save-student-btn" onClick={save} disabled={saving || !form.name || !form.batch_id || !form.roll_no || !form.dob || !form.blood_group || !form.emergency_contact} className="btn-gradient">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : (editId ? "Save Changes" : "Register")}</Button></DialogFooter>
             </DialogContent>
           </Dialog>
         )

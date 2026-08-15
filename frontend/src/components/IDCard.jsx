@@ -10,15 +10,16 @@ export default function IDCard({ student, institute, variant = "student" }) {
   const contactLine = [inst.phone, inst.email].filter(Boolean).join("  •  ");
   const idValue = isFaculty ? student.faculty_id : student.student_id;
   const heading = isFaculty ? "STAFF IDENTITY CARD" : "STUDENT IDENTITY CARD";
-  const cls = student.class_name || student.batch_name || student.grade || "—";
-  const section = student.section || "—";
-  const emergency = student.parent_phone || student.phone || student.emergency_contact || "—";
+  const cls = student.class_name || student.batch_name || student.grade || "";
+  const section = student.section || "";
+  const emergency = student.emergency_contact || student.parent_phone || student.phone || "";
   const NAVY = "#001E4D", GREEN = "#047857", GOLD = "#C9A227";
 
-  const rows = isFaculty
-    ? [["Designation", "Teacher"], ["Staff ID", idValue], ["Subjects", (student.subjects || []).join(", ") || "—"], ["Phone", student.phone || emergency]]
-    : [["Roll No", student.roll_no || "—"], ["Class / Sec", `${cls} / ${section}`], ["Father's Name", student.parent_name || "—"],
-       ["DOB", student.dob || "—"], ["Blood Group", student.blood_group || "—"], ["Emergency", emergency]];
+  const rows = (isFaculty
+    ? [["Designation", "Teacher"], ["Staff ID", idValue], ["Subjects", (student.subjects || []).join(", ")], ["Phone", student.phone || emergency]]
+    : [["Roll No", student.roll_no], ["Class / Sec", cls ? `${cls}${section ? " / " + section : ""}` : ""], ["Father's Name", student.parent_name],
+       ["DOB", student.dob], ["Blood Group", student.blood_group], ["Emergency", emergency]]
+  ).filter(([, v]) => v && String(v).trim());
   const address = student.address || inst.address || "";
 
   return (
@@ -51,7 +52,7 @@ export default function IDCard({ student, institute, variant = "student" }) {
           <p style={{ fontWeight: 800, color: NAVY, fontSize: "3.6mm", lineHeight: 1.05, margin: 0 }}>{student.name}</p>
           <p style={{ fontSize: "1.8mm", color: "#94a3b8", margin: "1.2mm 0 0", textTransform: "uppercase", letterSpacing: "0.2mm" }}>{isFaculty ? "Staff ID" : "Student ID"}</p>
           <p style={{ fontSize: "2.7mm", fontWeight: 700, fontFamily: "monospace", color: GREEN, margin: 0 }}>{idValue}</p>
-          {!isFaculty && <p style={{ fontSize: "2.2mm", color: NAVY, fontWeight: 600, margin: "1mm 0 0" }}>{cls} · Sec {section}</p>}
+          {!isFaculty && cls && <p style={{ fontSize: "2.2mm", color: NAVY, fontWeight: 600, margin: "1mm 0 0" }}>{cls}{section ? ` · Sec ${section}` : ""}</p>}
         </div>
       </div>
 
