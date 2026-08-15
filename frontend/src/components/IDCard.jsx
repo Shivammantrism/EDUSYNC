@@ -93,7 +93,7 @@ export default function IDCard({ student, institute, variant = "student", orient
           <div style={{ flexShrink: 0 }}><QR size={40} /></div>
         </div>
         {/* Body */}
-        <div style={{ display: "flex", gap: "3mm", padding: "1.8mm 3mm 0", height: "calc(100% - 13mm - 9mm)", alignItems: "flex-start", position: "relative" }}>
+        <div style={{ display: "flex", gap: "3mm", padding: "0.6mm 3mm 0", height: "calc(100% - 13mm - 9mm)", alignItems: "flex-start", position: "relative" }}>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.8mm", flexShrink: 0 }}>
             <Photo style={{ width: "20mm", height: "23mm" }} />
             <span style={{ fontSize: "1.4mm", fontWeight: 700, letterSpacing: "0.3mm", color: A, textTransform: "uppercase" }}>{idValue}</span>
