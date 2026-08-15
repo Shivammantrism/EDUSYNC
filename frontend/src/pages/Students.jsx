@@ -13,9 +13,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { toast } from "sonner";
 import { UserPlus, Users, Search, Upload, Loader2, KeyRound, FileText } from "lucide-react";
 import CredentialsDialog from "@/components/CredentialsDialog";
+import IDCard from "@/components/IDCard";
 
 export default function Students() {
-  const { user } = useAuth();
+  const { user, institute } = useAuth();
   const navigate = useNavigate();
   const [students, setStudents] = useState(null);
   const [batches, setBatches] = useState([]);
@@ -28,8 +29,10 @@ export default function Students() {
   const [uploading, setUploading] = useState(false);
   const [docUploading, setDocUploading] = useState(false);
   const [credResult, setCredResult] = useState(null);
-  const blank = { name: "", age: "", gender: "Male", batch_id: "", email: "", parent_name: "", mother_name: "", parent_phone: "", emergency_contact: "", parent_email: "", roll_no: "", dob: "", blood_group: "", address: "", documents: [], monthly_fee: 2000, photo_url: "", template: "classic", password: "", parental_consent: true };
+  const blank = { name: "", age: "", gender: "Male", batch_id: "", email: "", parent_name: "", mother_name: "", parent_phone: "", emergency_contact: "", parent_email: "", roll_no: "", dob: "", blood_group: "", address: "", documents: [], monthly_fee: 2000, photo_url: "", template: "classic", password: "", parental_consent: true, student_id: "" };
   const [form, setForm] = useState(blank);
+  const phoneOk = (v) => !v || /^[+]?\d{10,15}$/.test(String(v).replace(/[\s-]/g, ""));
+  const emailOk = (v) => !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 
   const load = () => api.get("/students").then((r) => setStudents(r.data));
   useEffect(() => { load(); api.get("/batches").then((r) => setBatches(r.data)); }, []);
@@ -46,6 +49,11 @@ export default function Students() {
   };
 
   const save = async () => {
+    const req = { name: "Full Name", batch_id: "Class & Section", roll_no: "Roll No", dob: "Date of Birth", blood_group: "Blood Group", emergency_contact: "Emergency Contact" };
+    const missing = Object.entries(req).filter(([k]) => !String(form[k] || "").trim()).map(([, v]) => v);
+    if (missing.length) { toast.error(`Please fill required field(s): ${missing.join(", ")}`); return; }
+    if (!phoneOk(form.parent_phone) || !phoneOk(form.emergency_contact)) { toast.error("Enter valid phone number(s) — 10 to 15 digits"); return; }
+    if (!emailOk(form.parent_email) || !emailOk(form.email)) { toast.error("Enter a valid email address"); return; }
     setSaving(true);
     try {
       const payload = { ...form, age: Number(form.age), monthly_fee: Number(form.monthly_fee) };
@@ -59,7 +67,7 @@ export default function Students() {
     } catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
     finally { setSaving(false); }
   };
-  const openEdit = (s) => { setForm({ name: s.name || "", age: s.age || "", gender: s.gender || "Male", batch_id: s.batch_id || "", email: s.email || "", parent_name: s.parent_name || "", mother_name: s.mother_name || "", parent_phone: s.parent_phone || "", emergency_contact: s.emergency_contact || "", parent_email: s.parent_email || "", roll_no: s.roll_no || "", dob: s.dob || "", blood_group: s.blood_group || "", address: s.address || "", documents: s.documents || [], monthly_fee: s.monthly_fee || 0, photo_url: s.photo_url || "", template: s.template || "classic", password: "", parental_consent: true }); setEditId(s.id); setOpen(true); };
+  const openEdit = (s) => { setForm({ name: s.name || "", age: s.age || "", gender: s.gender || "Male", batch_id: s.batch_id || "", email: s.email || "", parent_name: s.parent_name || "", mother_name: s.mother_name || "", parent_phone: s.parent_phone || "", emergency_contact: s.emergency_contact || "", parent_email: s.parent_email || "", roll_no: s.roll_no || "", dob: s.dob || "", blood_group: s.blood_group || "", address: s.address || "", documents: s.documents || [], monthly_fee: s.monthly_fee || 0, photo_url: s.photo_url || "", template: s.template || "classic", password: "", parental_consent: true, student_id: s.student_id || "" }); setEditId(s.id); setOpen(true); };
   const resend = async (s) => {
     try {
       const { data } = await api.post(`/students/${s.id}/resend-credentials`);
@@ -70,6 +78,10 @@ export default function Students() {
 
   if (!students) return <Loader />;
   const filtered = students.filter((s) => (s.name.toLowerCase().includes(q.toLowerCase()) || s.student_id.toLowerCase().includes(q.toLowerCase())) && (!clsParam || s.batch_id === clsParam));
+  const errs = { parent_phone: !phoneOk(form.parent_phone), emergency_contact: !phoneOk(form.emergency_contact), parent_email: !emailOk(form.parent_email), email: !emailOk(form.email) };
+  const hasErrs = Object.values(errs).some(Boolean);
+  const selBatch = batches.find((b) => b.id === form.batch_id) || {};
+  const previewStudent = { name: form.name, student_id: form.student_id || (editId ? "" : "AUTO ON SAVE"), photo_url: form.photo_url, roll_no: form.roll_no, class_name: selBatch.class_name || selBatch.name || "", section: selBatch.section || "", batch_name: selBatch.name || "", parent_name: form.parent_name, dob: form.dob, blood_group: form.blood_group, emergency_contact: form.emergency_contact, parent_phone: form.parent_phone, address: form.address, template: form.template };
 
   return (
     <div>
@@ -77,8 +89,9 @@ export default function Students() {
         (user.role === "principal" || user.role === "teacher") && (
           <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setForm(blank); setEditId(null); } }}>
             <DialogTrigger asChild><Button data-testid="add-student-btn" onClick={() => { setForm(blank); setEditId(null); }} className="btn-gradient"><UserPlus className="h-4 w-4 mr-2" />Register Student</Button></DialogTrigger>
-            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
               <DialogHeader><DialogTitle>{editId ? "Edit Student" : "Register New Student"}</DialogTitle></DialogHeader>
+              <div className="grid md:grid-cols-[1fr_240px] gap-6">
               <div className="space-y-3">
                 <div className="flex items-center gap-4">
                   <div className="h-20 w-20 rounded-xl bg-slate-100 overflow-hidden flex items-center justify-center border">
@@ -115,11 +128,11 @@ export default function Students() {
                   <div><Label>Mother's Name</Label><Input data-testid="student-mother-name" value={form.mother_name} onChange={(e) => setForm({ ...form, mother_name: e.target.value })} /></div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><Label>Primary Contact</Label><Input data-testid="student-parent-phone" value={form.parent_phone} onChange={(e) => setForm({ ...form, parent_phone: e.target.value })} placeholder="Parent mobile" /></div>
-                  <div><Label>Emergency Contact <span className="text-red-500">*</span></Label><Input data-testid="student-emergency-contact" value={form.emergency_contact} onChange={(e) => setForm({ ...form, emergency_contact: e.target.value })} placeholder="Alternate mobile" /></div>
+                  <div><Label>Primary Contact</Label><Input data-testid="student-parent-phone" value={form.parent_phone} onChange={(e) => setForm({ ...form, parent_phone: e.target.value })} placeholder="Parent mobile" />{errs.parent_phone && <p data-testid="err-parent-phone" className="text-xs text-red-500 mt-1">Enter 10–15 digits</p>}</div>
+                  <div><Label>Emergency Contact <span className="text-red-500">*</span></Label><Input data-testid="student-emergency-contact" value={form.emergency_contact} onChange={(e) => setForm({ ...form, emergency_contact: e.target.value })} placeholder="Alternate mobile" />{errs.emergency_contact && <p data-testid="err-emergency" className="text-xs text-red-500 mt-1">Enter 10–15 digits</p>}</div>
                 </div>
-                <div><Label>Parent / Guardian Email <span className="text-xs font-normal text-slate-400">(receipts & login)</span></Label><Input data-testid="student-parent-email" type="email" value={form.parent_email} onChange={(e) => setForm({ ...form, parent_email: e.target.value })} placeholder="parent@example.com" /></div>
-                <div><Label>Student Email <span className="text-xs font-normal text-slate-400">(optional — gets own login)</span></Label><Input data-testid="student-email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="student@example.com" /></div>
+                <div><Label>Parent / Guardian Email <span className="text-xs font-normal text-slate-400">(receipts & login)</span></Label><Input data-testid="student-parent-email" type="email" value={form.parent_email} onChange={(e) => setForm({ ...form, parent_email: e.target.value })} placeholder="parent@example.com" />{errs.parent_email && <p data-testid="err-parent-email" className="text-xs text-red-500 mt-1">Invalid email address</p>}</div>
+                <div><Label>Student Email <span className="text-xs font-normal text-slate-400">(optional — gets own login)</span></Label><Input data-testid="student-email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="student@example.com" />{errs.email && <p data-testid="err-email" className="text-xs text-red-500 mt-1">Invalid email address</p>}</div>
                 <div className="grid grid-cols-2 gap-3">
                   <div><Label>Date of Birth <span className="text-red-500">*</span></Label><Input data-testid="student-dob" type="date" value={form.dob} onChange={(e) => setForm({ ...form, dob: e.target.value })} /></div>
                   <div><Label>Blood Group <span className="text-red-500">*</span></Label>
@@ -168,7 +181,12 @@ export default function Students() {
                   </label>
                 )}
               </div>
-              <DialogFooter><Button data-testid="save-student-btn" onClick={save} disabled={saving || !form.name || !form.batch_id || !form.roll_no || !form.dob || !form.blood_group || !form.emergency_contact} className="btn-gradient">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : (editId ? "Save Changes" : "Register")}</Button></DialogFooter>
+              <div className="hidden md:block">
+                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Live ID Preview</p>
+                <div className="sticky top-0" data-testid="id-preview"><IDCard student={previewStudent} institute={institute} /></div>
+              </div>
+              </div>
+              <DialogFooter><Button data-testid="save-student-btn" onClick={save} disabled={saving || hasErrs || !form.name || !form.batch_id || !form.roll_no || !form.dob || !form.blood_group || !form.emergency_contact} className="btn-gradient">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : (editId ? "Save Changes" : "Register")}</Button></DialogFooter>
             </DialogContent>
           </Dialog>
         )
