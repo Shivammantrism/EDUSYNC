@@ -1,0 +1,43 @@
+{
+  "summary": "Retested EduSync Phase 1 on the public preview. All three requested fixes pass: principal Add Students moves students and refreshes roster/count, teachers can view non-taught rosters with full privacy redaction, and teacher student detail is redacted. All listed regressions pass through API and UI. One assignment data-integrity edge case remains: the principal API accepts a nonexistent target batch and mutates the student's batch_id.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/batches/{bid}/assign",
+        "issue": "The endpoint never validates that {bid} exists and belongs to the principal's institute. Assigning a real student to a random UUID returns 200 with moved:1 and persists that invalid batch_id, removing the student from valid class rosters until repaired. The test restores the student in teardown.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration13_phase1.py",
+    "/app/test_reports/pytest/pytest_iteration14_phase1.xml"
+  ],
+  "action_items": [
+    "Before update_many in POST /batches/{bid}/assign, require an institute-scoped batch lookup and return 404 when the target class does not exist; use a Pydantic request model for student_ids."
+  ],
+  "critical_code_review_comments": [
+    "assign_students accepts an unvalidated raw dict and updates students without first resolving {bid} under the current institute; this creates dangling or cross-institute batch references even though the happy-path UI works.",
+    "server.py is 4,376 lines, far above the 700-line maintainability threshold; class/student/homework routes should be split into focused modules."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration13_phase1.py",
+    "/app/test_reports/pytest/pytest_iteration14_phase1.xml",
+    "/app/test_reports/iteration_7.json"
+  ],
+  "success_rate": {
+    "backend": "90% (9/10 targeted API tests passed; every requested happy-path fix/regression passed)",
+    "frontend": "100% (principal assignment, class create/edit, teacher cross-class roster, and cross-class homework flows passed)"
+  },
+  "seed_data_creation": "Created disposable API classes/homework and one UI class/homework. The UI assignment temporarily moved one existing student. All classes/homework were deleted and all student batch assignments were restored.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Public preview is healthy. Principal UI Add Students changed Class 8-A count 6→7 and refreshed the roster, then cleanup restored the selected student. Anita sees all 4 classes; Class 9-A was the current populated i_teach=false class and its 14-student roster returned 200 with no hidden fields. Teacher UI homework creation for Class 9-A passed. Current seed data marks Class 8-A teacher_id as Anita, contrary to the request note saying it is not her class; use a current i_teach=false class for non-taught regression. No Batches/Homework console errors were observed.",
+  "rca_of_the_issue": "assign_students directly executes update_many using the path bid and same-institute student IDs. There is no db.batches.find_one({id: bid, institute_id: current institute}) guard, so arbitrary target IDs are persisted. Reproduction: mint a principal token, POST /api/batches/<random-uuid>/assign with one valid same-institute student ID; response is 200 {ok:true,moved:1}, and the student's batch_id becomes the random UUID."
+}

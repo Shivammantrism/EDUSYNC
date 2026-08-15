@@ -10,6 +10,27 @@ Last updated: 2026-08-10
 - Fee Receipts (server.py `fee_receipt`): now stamp the institute's uploaded official seal (falls back to logo) at bottom-center with an "Authorised Signatory / Official Seal" caption.
 - Defaulter Report (server.py `defaulters_report` + Fees.jsx): principal can now filter by class/section and minimum amount due via a dialog; PDF title reflects the applied filters; returns 404 with a friendly message when nothing matches. Backend verified via curl (200 filtered, 404 no-match).
 
+## Big Upgrade — Timetable, Teacher Workflows & Advanced Class Management (started 2026-08-15)
+User plan (approved): P1 access/classes freedom → P2 timetable/scheduler → P3 meeting confirmation.
+Key choices: teachers see all students & classes but student CONTACT+FEE stay principal-only; inline click-a-cell timetable edit; principal-defined custom period timings + multiple/custom lunch breaks; subjects defined PER class.
+
+### Phase 1 — DONE & tested (iteration_7 all pass)
+- Teachers now see ALL students (GET /students) and ALL classes (GET /batches, each with `i_teach` flag), plus ALL homework — previously restricted to their own class-teacher batches.
+- Privacy: student CONTACT (parent_phone, parent_email, phone, emergency_contact, address, student email) and FEE (monthly_fee) fields are stripped for teacher role across GET /students, GET /students/{sid}, GET /batches/{bid}/students (via `_strip_contact` + `TEACHER_HIDDEN_FIELDS`).
+- Any teacher can assign homework to any class/section (POST /homework unrestricted; list now shows all).
+- Classes & Sections (Batches.jsx): Section is optional ("Class 11" and "Class 11 - A" both supported); principal can Edit a class and Add students from the global list via new `POST /batches/{bid}/assign` (validates class exists → 404 otherwise).
+- Teacher sidebar gains "Classes & Sections" (read-only: view classes/students + timetable PDF; no create/edit/delete/email).
+
+### Phase 2 — TODO (Timetable & Scheduler)
+- Scheduler asks Class → per-class Subjects → Teachers before generating (editable anytime).
+- Principal-defined period timings + multiple/custom lunch breaks; inline click-a-cell manual edit of any timetable slot.
+- Premium Timetable PDF with logo, name, address & contact on top.
+- Teacher "Personal Schedule" = all their classes/times (fix GET /timetable to filter by teacher_id in entries, not class-teacher batches); student sees only their class.
+
+### Phase 3 — TODO (Meeting Confirmation, new module)
+- Principal creates meeting (title/date/time/agenda/invite teachers); teachers confirm availability (Available / Not available + note); principal sees confirmations.
+
+
 
 ## Original Problem Statement
 Multi-institute management SaaS with two connected portals sharing one database. Each institute gets its own workspace. Three roles: Principal (full access), Teacher (own classes/students), Student (own data). Modules: principal dashboard w/ KPIs+charts, student management + photo/PDF docs + printable QR ID cards, batches/classes, auto timetable scheduler, QR attendance + teacher self-attendance + leave approval, fee management (Razorpay UPI + receipts + reminders + monthly plans), exams/results with grades & rankings, homework + submissions, staff salary + slips, one-click PDF report cards, announcement board, three-way complaint management, admission enquiry tracker, student portal.

@@ -1,0 +1,88 @@
+{
+  "summary": "Tested Phase 1 class CRUD, optional sections, roster assignment, teacher global visibility/privacy, homework freedom, teacher read-only UI, student class isolation, required auth controls, and production build against the public preview. Class create/edit, global redacted /students list, all-class i_teach list, cross-class homework, teacher read-only controls, and student class isolation pass. Assignment is unimplemented, non-taught roster viewing is blocked, and alternate teacher student endpoints leak principal-only data.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/batches/{bid}/assign",
+        "issue": "Endpoint is absent and returns 404. Principal Add Selected shows Not Found, no student is assigned, and roster/count cannot refresh.",
+        "priority": "CRITICAL"
+      },
+      {
+        "endpoint": "GET /api/batches/{bid}/students",
+        "issue": "Teachers receive 403 'Not your batch' for non-taught classes, contradicting the required all-class read-only View Students flow. For taught classes the response also leaks parent_phone and monthly_fee instead of applying teacher redaction.",
+        "priority": "CRITICAL"
+      },
+      {
+        "endpoint": "GET /api/students/{sid}",
+        "issue": "Teacher requests return principal-only fields. Reproduced leakage of parent_phone, parent_email, and monthly_fee for a same-institute student.",
+        "priority": "CRITICAL"
+      },
+      {
+        "endpoint": "/api/auth/verify-otp and CORS middleware",
+        "issue": "OTP completion does not set an application HttpOnly/Secure access_token cookie, and credentialed CORS is disabled instead of using explicit origins.",
+        "priority": "HIGH"
+      },
+      {
+        "endpoint": "ensure_super_admin startup seed",
+        "issue": "Existing super-admin password_hash is not updated when SUPER_ADMIN_PASSWORD changes; the seed only inserts when no account exists.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Principal Add Students",
+        "issue": "Picker opens and selection works, but Add Selected receives 404 and displays a Not Found toast because the backend assign route is missing.",
+        "affected_selectors": ["[data-testid='add-students-btn']", "[data-testid^='add-check-']", "[data-testid='confirm-add-students-btn']"]
+      },
+      {
+        "flow": "Teacher View Students on non-taught class",
+        "issue": "All class cards render a View Students control, but clicking one for a non-taught populated class receives 403 and displays 'Not your batch' with an empty roster dialog.",
+        "affected_selectors": ["[data-testid^='view-students-']", "[data-testid^='roster-']"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration13_phase1.py",
+    "/app/backend/tests/test_iteration12_auth_superadmin.py",
+    "/app/test_reports/pytest/pytest_iteration13_phase1.xml",
+    "/app/test_reports/pytest/pytest_iteration13_auth_controls.xml"
+  ],
+  "action_items": [
+    "Implement principal-only POST /batches/{bid}/assign with institute-scoped batch/student validation and return moved count; then refresh roster and class count.",
+    "Allow teachers to GET rosters for every class in their institute and apply _strip_contact to every returned student.",
+    "Apply teacher redaction to GET /students/{sid}; audit all teacher-accessible student endpoints so contact and fee fields remain principal-only.",
+    "Set the secure HttpOnly auth cookie after successful OTP and configure credentialed CORS with explicit allowed origins, or formally revise the auth requirement.",
+    "Make ensure_super_admin idempotently update the configured password for an existing super-admin.",
+    "Retest principal assignment plus teacher roster/privacy through API and UI after fixes."
+  ],
+  "critical_code_review_comments": [
+    "Batches.jsx calls /batches/{id}/assign, but server.py defines no matching route; this is a frontend/backend contract omission.",
+    "batch_students explicitly enforces teacher_batches membership and returns raw student documents, causing both the 403 freedom defect and PII/fee leakage; get_student likewise returns raw data to any authenticated same-institute user.",
+    "server.py is 4,363 lines and contains duplicate startup/shutdown/root blocks; split it into focused modules and remove duplicate lifecycle registration.",
+    "ensure_super_admin only inserts on absence, so configuration-based password rotation can never update an existing account.",
+    "The production build passes but reports existing React hook dependency and html5-qrcode source-map warnings."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration13_phase1.py",
+    "/app/backend/tests/phase1_ui_context.py",
+    "/app/backend/tests/cleanup_phase1_ui.py",
+    "/app/test_reports/pytest/pytest_iteration13_phase1.xml",
+    "/app/test_reports/pytest/pytest_iteration13_auth_controls.xml",
+    "/app/test_reports/iteration_6.json"
+  ],
+  "success_rate": {
+    "backend": "50% overall (7/14: Phase 1 5/9; required auth controls 2/5)",
+    "frontend": "75% of targeted UI subflows (principal load/create/edit and teacher sidebar/read-only/homework passed; assignment and non-taught roster view failed)"
+  },
+  "seed_data_creation": "Created disposable API/UI classes and homework; all were removed. Assignment returned 404, so no student batch was changed. Disposable lockout data used the existing test fixture cleanup.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "Used JWTs minted from configured JWT_SECRET for principal Dr. Shivam Mantri, teacher Anita Sharma in institute 42c4f12d, and student Saanvi Singh, as instructed. /app/auth_testing.md is absent.",
+  "context_for_next_testing_agent": "Public preview and production build load. Final Phase 1 pytest consistently has 4 failures: missing assign route, 403 non-taught roster, detail PII leak, taught-roster PII leak. Teacher UI has exactly 4 cards, no New/Edit/Delete/Email controls, and View Students + Timetable PDF on each; cross-class homework UI/API succeeds. Principal no-section create and edit-to-section-B persist. Required auth controls still fail cookie, CORS, and super-admin password rotation.",
+  "rca_of_the_issue": "The roster feature is only partially wired: frontend assignment UI was added without its backend route. Existing batch_students retained old teacher ownership authorization and returns unredacted documents. The new _strip_contact helper is used only by list_students, leaving detail/roster endpoints as bypasses. Auth failures come from no set_cookie call, CORSMiddleware allow_credentials=False, and insert-only ensure_super_admin logic."
+}

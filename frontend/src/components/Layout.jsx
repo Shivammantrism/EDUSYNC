@@ -179,7 +179,8 @@ const NAV = {
   ],
   teacher: [
     ["/app/dashboard", "Dashboard", LayoutDashboard, "dashboard"],
-    ["/app/students", "My Students", Users, "students"],
+    ["/app/students", "Students", Users, "students"],
+    ["/app/batches", "Classes & Sections", GraduationCap, "batches"],
     ["/app/attendance", "Attendance", CalendarCheck, "attendance"],
     ["/app/timetable", "Timetable", CalendarDays, "timetable"],
     ["/app/exams", "Exams & Marks", FileText, "exams"],

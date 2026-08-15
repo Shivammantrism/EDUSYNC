@@ -457,6 +457,15 @@ async def teacher_batches(user):
     return [b["id"] for b in bs]
 
 
+TEACHER_HIDDEN_FIELDS = ("parent_phone", "parent_email", "phone", "emergency_contact", "address", "monthly_fee", "email")
+
+
+def _strip_contact(s):
+    for k in TEACHER_HIDDEN_FIELDS:
+        s.pop(k, None)
+    return s
+
+
 # ---------------------------------------------------------------- models
 class RegisterInstitute(BaseModel):
     institute_name: str
@@ -1136,11 +1145,11 @@ def _brand_email_html(inst, heading, body_html, cta=True):
 @api.get("/students")
 async def list_students(user=Depends(require("principal", "teacher")), batch_id: Optional[str] = None):
     q = scope(user)
-    if user["role"] == "teacher":
-        q["batch_id"] = {"$in": await teacher_batches(user)}
     if batch_id:
         q["batch_id"] = batch_id
     students = await db.students.find(q, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(2000)
+    if user["role"] == "teacher":
+        students = [_strip_contact(s) for s in students]
     return students
 
 
@@ -1326,6 +1335,8 @@ async def get_student(sid: str, user=Depends(get_current_user)):
     s = await db.students.find_one({"id": sid, "institute_id": user["institute_id"]}, {"_id": 0, "password_hash": 0})
     if not s:
         raise HTTPException(404, "Student not found")
+    if user["role"] == "teacher":
+        s = _strip_contact(s)
     return s
 
 
@@ -1441,8 +1452,6 @@ async def delete_teacher(tid: str, user=Depends(require("principal"))):
 @api.get("/batches")
 async def list_batches(user=Depends(get_current_user)):
     q = scope(user)
-    if user["role"] == "teacher":
-        q["teacher_id"] = user["id"]
     if user["role"] == "student":
         s = await db.students.find_one({"id": user["id"]})
         q["id"] = s.get("batch_id", "")
@@ -1454,9 +1463,16 @@ async def list_batches(user=Depends(get_current_user)):
         counts[row["_id"]] = row["n"]
     teacher_ids = [b.get("teacher_id") for b in batches if b.get("teacher_id")]
     teachers = {t["id"]: t["name"] async for t in db.users.find({"id": {"$in": teacher_ids}}, {"_id": 0, "id": 1, "name": 1})}
+    taught = set()
+    if user["role"] == "teacher":
+        taught = set(await teacher_batches(user))
+        async for r in db.timetable.find({"institute_id": user["institute_id"], "teacher_id": user["id"]}, {"_id": 0, "batch_id": 1}):
+            taught.add(r["batch_id"])
     for b in batches:
         b["student_count"] = counts.get(b["id"], 0)
         b["teacher_name"] = teachers.get(b.get("teacher_id"), "Unassigned")
+        if user["role"] == "teacher":
+            b["i_teach"] = b["id"] in taught
     return batches
 
 
@@ -1483,10 +1499,24 @@ async def delete_batch(bid: str, user=Depends(require("principal"))):
 
 @api.get("/batches/{bid}/students")
 async def batch_students(bid: str, user=Depends(require("principal", "teacher"))):
-    if user["role"] == "teacher" and bid not in await teacher_batches(user):
-        raise HTTPException(403, "Not your batch")
-    return await db.students.find({"institute_id": user["institute_id"], "batch_id": bid},
-                                  {"_id": 0, "password_hash": 0}).sort("name", 1).to_list(2000)
+    students = await db.students.find({"institute_id": user["institute_id"], "batch_id": bid},
+                                      {"_id": 0, "password_hash": 0}).sort("name", 1).to_list(2000)
+    if user["role"] == "teacher":
+        students = [_strip_contact(s) for s in students]
+    return students
+
+
+@api.post("/batches/{bid}/assign")
+async def assign_students(bid: str, payload: dict, user=Depends(require("principal"))):
+    batch = await db.batches.find_one({"id": bid, "institute_id": user["institute_id"]}, {"_id": 0, "id": 1})
+    if not batch:
+        raise HTTPException(404, "Class not found")
+    ids = payload.get("student_ids", [])
+    if not ids:
+        return {"ok": True, "moved": 0}
+    res = await db.students.update_many({"id": {"$in": ids}, "institute_id": user["institute_id"]},
+                                        {"$set": {"batch_id": bid}})
+    return {"ok": True, "moved": res.modified_count}
 
 
 @api.put("/students/{sid}/move")
@@ -1913,9 +1943,7 @@ async def list_homework(user=Depends(get_current_user)):
     if user["role"] in ("student", "parent"):
         s = await db.students.find_one({"id": user["id"]})
         q["batch_id"] = s.get("batch_id", "")
-    elif user["role"] == "teacher":
-        batches = await db.batches.find({"institute_id": user["institute_id"], "teacher_id": user["id"]}, {"id": 1, "_id": 0}).to_list(1000)
-        q["batch_id"] = {"$in": [b["id"] for b in batches]}
+    # principal & teacher see all homework across the institute
     hw = await db.homework.find(q, {"_id": 0}).sort("deadline", -1).to_list(1000)
     hw_ids = [h["id"] for h in hw]
     counts = {}
