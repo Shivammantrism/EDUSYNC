@@ -16,6 +16,7 @@ export default function BulkIDCards() {
   const [batch, setBatch] = useState(null);
   const [perPage, setPerPage] = useState("24");
   const [preset, setPreset] = useState("standard");
+  const [orientation, setOrientation] = useState("landscape");
 
   useEffect(() => {
     api.get("/students", { params: { batch_id: batchId } }).then((r) => setStudents(r.data));
@@ -37,6 +38,10 @@ export default function BulkIDCards() {
       <div className="no-print">
         <PageHeader title="Batch ID Cards" subtitle={`${batch?.name || ""} · ${students.length} cards ready to print`} actions={
           <div className="flex items-center gap-2 flex-wrap justify-end">
+            <Select value={orientation} onValueChange={setOrientation}>
+              <SelectTrigger data-testid="id-orientation" className="h-9 w-[180px]"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="landscape">Horizontal (Landscape)</SelectItem><SelectItem value="portrait">Vertical (Portrait)</SelectItem></SelectContent>
+            </Select>
             <Select value={perPage} onValueChange={setPerPage}>
               <SelectTrigger data-testid="stickers-perpage" className="h-9 w-[130px]"><SelectValue /></SelectTrigger>
               <SelectContent><SelectItem value="12">12 / page</SelectItem><SelectItem value="24">24 / page</SelectItem><SelectItem value="30">30 / page</SelectItem></SelectContent>
@@ -52,7 +57,7 @@ export default function BulkIDCards() {
       </div>
       {students.length === 0 ? <Empty icon={IdIcon} title="No students in this batch" /> : (
         <div className="flex flex-wrap gap-6 justify-center">
-          {students.map((s) => <IDCard key={s.id} student={s} institute={institute} />)}
+          {students.map((s) => <IDCard key={s.id} student={s} institute={institute} orientation={orientation} />)}
         </div>
       )}
     </div>

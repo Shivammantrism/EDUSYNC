@@ -1,88 +1,94 @@
 import { QRCodeSVG } from "qrcode.react";
 import { fileUrl } from "@/lib/api";
 
-// CR80 portrait ID card (54mm x 85.6mm) — master template: navy / emerald / gold.
-export default function IDCard({ student, institute, variant = "student" }) {
+// CR80 ID card (85.6mm x 54mm) — supports landscape & portrait, navy/emerald/gold theme.
+const NAVY = "#001E4D", GREEN = "#047857", GOLD = "#C9A227";
+
+export default function IDCard({ student, institute, variant = "student", orientation = "landscape" }) {
   const isFaculty = variant === "faculty";
+  const isLandscape = orientation !== "portrait";
   const inst = typeof institute === "object" && institute ? institute : { name: institute || "EduSync" };
   const instName = inst.name || "EduSync";
-  const logo = inst.logo_url ? fileUrl(inst.logo_url) : "/edusync-logo.png";
-  const contactLine = [inst.phone, inst.email].filter(Boolean).join("  •  ");
   const idValue = isFaculty ? student.faculty_id : student.student_id;
   const heading = isFaculty ? "STAFF IDENTITY CARD" : "STUDENT IDENTITY CARD";
   const cls = student.class_name || student.batch_name || student.grade || "";
   const section = student.section || "";
   const emergency = student.emergency_contact || student.parent_phone || student.phone || "";
-  const NAVY = "#001E4D", GREEN = "#047857", GOLD = "#C9A227";
 
   const rows = (isFaculty
-    ? [["Designation", "Teacher"], ["Staff ID", idValue], ["Subjects", (student.subjects || []).join(", ")], ["Phone", student.phone || emergency]]
+    ? [["Designation", "Teacher"], ["Staff ID", idValue], ["Subjects", (student.subjects || []).join(", ")], ["Phone", student.phone || emergency], ["Blood Group", student.blood_group]]
     : [["Roll No", student.roll_no], ["Class / Sec", cls ? `${cls}${section ? " / " + section : ""}` : ""], ["Father's Name", student.parent_name],
-       ["DOB", student.dob], ["Blood Group", student.blood_group], ["Contact Number", emergency]]
-  ).filter(([, v]) => v && String(v).trim());
-  const address = student.address || inst.address || "";
+       ["DOB", student.dob], ["Blood Group", student.blood_group], ["Contact", emergency]]
+  ).filter(([, v]) => v && String(v).trim()).slice(0, isLandscape ? 5 : 4);
+
+  const bg = isLandscape ? "/id-template-h.png" : "/id-template-v.png";
+  const W = isLandscape ? "85.6mm" : "54mm";
+  const H = isLandscape ? "54mm" : "85.6mm";
+
+  const Photo = ({ style }) => (
+    <div style={{ ...style, position: "absolute", overflow: "hidden", borderRadius: "1.4mm", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      {student.photo_url
+        ? <img src={fileUrl(student.photo_url)} alt="" style={{ height: "100%", width: "100%", objectFit: "cover" }} />
+        : <span style={{ fontSize: "8mm", fontWeight: 800, color: "#cbd5e1" }}>{(student.name || "?")[0]}</span>}
+    </div>
+  );
+
+  const Rows = ({ labelW, fs }) => (
+    <div>
+      {rows.map(([k, v]) => (
+        <div key={k} style={{ display: "flex", gap: "1.5mm", padding: "0.55mm 0", borderBottom: "0.12mm solid rgba(0,30,77,0.10)" }}>
+          <span style={{ fontSize: fs.k, color: "#5b6b7f", textTransform: "uppercase", letterSpacing: "0.1mm", width: labelW, flexShrink: 0 }}>{k}</span>
+          <span style={{ fontSize: fs.v, color: NAVY, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v}</span>
+        </div>
+      ))}
+    </div>
+  );
+
+  const QR = ({ style }) => (
+    <div style={{ ...style, position: "absolute", background: "#fff", padding: "0.7mm", borderRadius: "1mm", border: `0.3mm solid ${GOLD}`, lineHeight: 0 }}>
+      <QRCodeSVG value={idValue || "EDUSYNC"} size={isLandscape ? 42 : 40} fgColor={NAVY} />
+    </div>
+  );
 
   return (
     <div id="id-card" data-testid={isFaculty ? "faculty-id-card" : "id-card"}
-      className="id-card-cr80 relative mx-auto overflow-hidden bg-white"
-      style={{ width: "54mm", height: "85.6mm", borderRadius: "3mm", boxShadow: "0 6px 24px rgba(2,30,60,0.25)", border: `0.4mm solid ${GOLD}`, fontFamily: "Arial, sans-serif" }}>
+      className="id-card-cr80 relative mx-auto overflow-hidden"
+      style={{ width: W, height: H, borderRadius: "3mm", boxShadow: "0 6px 24px rgba(2,30,60,0.25)",
+        backgroundImage: `url(${bg})`, backgroundSize: "100% 100%", backgroundRepeat: "no-repeat", fontFamily: "Arial, sans-serif" }}>
 
-      {/* Header: school branding */}
-      <div style={{ background: `linear-gradient(115deg, ${NAVY} 62%, ${GREEN})`, padding: "2.4mm 3mm", color: "#fff" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "2mm" }}>
-          <div style={{ height: "9mm", width: "9mm", borderRadius: "1.6mm", background: "#fff", padding: "0.6mm", flexShrink: 0, display: "flex", border: `0.3mm solid ${GOLD}` }}>
-            <img src={logo} alt="" style={{ height: "100%", width: "100%", objectFit: "contain" }} />
+      {isLandscape ? (
+        <>
+          {/* Institute name top */}
+          <div style={{ position: "absolute", top: "5%", left: "30%", width: "54%" }}>
+            <p style={{ fontWeight: 800, color: NAVY, fontSize: "3.4mm", lineHeight: 1.05, margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{instName}</p>
+            <p style={{ fontSize: "1.9mm", letterSpacing: "0.35mm", color: GREEN, fontWeight: 700, margin: "0.8mm 0 0" }}>{heading}</p>
           </div>
-          <div style={{ minWidth: 0 }}>
-            <p style={{ fontWeight: 800, fontSize: "3mm", lineHeight: 1.05, margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{instName}</p>
-            {inst.address && <p style={{ fontSize: "1.6mm", lineHeight: 1.2, margin: "0.5mm 0 0", opacity: 0.9, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{inst.address}</p>}
-            {contactLine && <p style={{ fontSize: "1.6mm", lineHeight: 1.2, margin: "0.3mm 0 0", color: "#ffe9a8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{contactLine}</p>}
+          <Photo style={{ left: "8.2%", top: "29%", width: "22.5%", height: "45%", border: `0.5mm solid ${NAVY}` }} />
+          {/* Name + ID + details */}
+          <div style={{ position: "absolute", left: "35%", top: "27%", width: "60%" }}>
+            <p style={{ fontWeight: 800, color: NAVY, fontSize: "4mm", lineHeight: 1.05, margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{student.name}</p>
+            <p style={{ fontSize: "3mm", fontWeight: 700, fontFamily: "monospace", color: GREEN, margin: "0.6mm 0 1.4mm" }}>{idValue}</p>
+            <Rows labelW="20mm" fs={{ k: "1.85mm", v: "2mm" }} />
           </div>
-        </div>
-        <p style={{ fontSize: "1.7mm", letterSpacing: "0.4mm", textAlign: "center", margin: "1.6mm 0 0", color: GOLD, fontWeight: 700 }}>{heading}</p>
-      </div>
-
-      {/* Photo + name/id */}
-      <div style={{ display: "flex", padding: "2.4mm 3mm 1.5mm", gap: "3mm" }}>
-        <div style={{ height: "21mm", width: "17mm", borderRadius: "1.6mm", overflow: "hidden", background: "#f1f5f9", border: `0.6mm solid ${NAVY}`, boxShadow: `0 0 0 0.4mm ${GOLD}`, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          {student.photo_url ? <img src={fileUrl(student.photo_url)} alt="" style={{ height: "100%", width: "100%", objectFit: "cover" }} />
-            : <span style={{ fontSize: "9mm", fontWeight: 800, color: "#cbd5e1" }}>{(student.name || "?")[0]}</span>}
-        </div>
-        <div style={{ minWidth: 0, paddingTop: "0.5mm" }}>
-          <p style={{ fontWeight: 800, color: NAVY, fontSize: "3.6mm", lineHeight: 1.05, margin: 0 }}>{student.name}</p>
-          <p style={{ fontSize: "1.8mm", color: "#94a3b8", margin: "1.2mm 0 0", textTransform: "uppercase", letterSpacing: "0.2mm" }}>{isFaculty ? "Staff ID" : "Student ID"}</p>
-          <p style={{ fontSize: "2.7mm", fontWeight: 700, fontFamily: "monospace", color: GREEN, margin: 0 }}>{idValue}</p>
-          {!isFaculty && cls && <p style={{ fontSize: "2.2mm", color: NAVY, fontWeight: 600, margin: "1mm 0 0" }}>{cls}{section ? ` · Sec ${section}` : ""}</p>}
-        </div>
-      </div>
-
-      {/* Detail rows */}
-      <div style={{ padding: "0 3mm" }}>
-        {rows.map(([k, v]) => (
-          <div key={k} style={{ display: "flex", justifyContent: "space-between", gap: "2mm", borderBottom: "0.15mm solid #eef2f7", padding: "0.85mm 0" }}>
-            <span style={{ fontSize: "1.85mm", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.15mm", flexShrink: 0 }}>{k}</span>
-            <span style={{ fontSize: "2.05mm", color: NAVY, fontWeight: 600, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "32mm" }}>{v}</span>
+          <QR style={{ right: "4%", bottom: "9%" }} />
+        </>
+      ) : (
+        <>
+          {/* Institute name top strip */}
+          <div style={{ position: "absolute", top: "1.6%", left: "22%", width: "66%", textAlign: "center" }}>
+            <p style={{ fontWeight: 800, color: "#fff", fontSize: "2.5mm", lineHeight: 1.1, margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textShadow: "0 0.3mm 0.6mm rgba(0,0,0,0.4)" }}>{instName}</p>
           </div>
-        ))}
-      </div>
-
-      {/* Footer: QR (left) + Address (right) */}
-      <div style={{ position: "absolute", bottom: 0, left: 0, right: 0 }}>
-        <div style={{ display: "flex", alignItems: "flex-end", gap: "2.5mm", padding: "0 3mm 1.4mm" }}>
-          <div style={{ background: "#fff", padding: "0.8mm", borderRadius: "1.2mm", border: "0.3mm solid #e2e8f0", flexShrink: 0 }}>
-            <QRCodeSVG value={idValue || "EDUSYNC"} size={38} fgColor={NAVY} />
+          <Photo style={{ left: "37.5%", top: "7.5%", width: "25%", height: "13.5%", border: `0.5mm solid ${GOLD}` }} />
+          {/* Details panel (lower cream area) */}
+          <div style={{ position: "absolute", left: "16%", top: "57.5%", width: "68%", textAlign: "center" }}>
+            <p style={{ fontSize: "1.65mm", letterSpacing: "0.3mm", color: GREEN, fontWeight: 700, margin: 0 }}>{heading}</p>
+            <p style={{ fontWeight: 800, color: NAVY, fontSize: "3.1mm", lineHeight: 1.1, margin: "0.7mm 0 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{student.name}</p>
+            <p style={{ fontSize: "2.4mm", fontWeight: 700, fontFamily: "monospace", color: GREEN, margin: "0.3mm 0 1.2mm" }}>{idValue}</p>
+            <div style={{ textAlign: "left" }}><Rows labelW="13mm" fs={{ k: "1.7mm", v: "1.85mm" }} /></div>
           </div>
-          {address && (
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <span style={{ fontSize: "1.6mm", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.15mm" }}>Address</span>
-              <p style={{ fontSize: "1.85mm", color: NAVY, fontWeight: 500, margin: "0.3mm 0 0", lineHeight: 1.2, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{address}</p>
-            </div>
-          )}
-        </div>
-        <div style={{ height: "3.2mm", background: `linear-gradient(90deg, ${NAVY}, ${GREEN})`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <span style={{ color: "#fff", fontSize: "1.6mm", letterSpacing: "0.3mm" }}>Powered by EduSync — Privam Solutions</span>
-        </div>
-      </div>
+          <QR style={{ left: "50%", bottom: "2.5%", transform: "translateX(-50%)" }} />
+        </>
+      )}
     </div>
   );
 }

@@ -13,6 +13,7 @@ export default function FacultyIDCards() {
   const [teachers, setTeachers] = useState(null);
   const [perPage, setPerPage] = useState("24");
   const [preset, setPreset] = useState("standard");
+  const [orientation, setOrientation] = useState("landscape");
 
   useEffect(() => { api.get("/teachers").then((r) => setTeachers(r.data)); }, []);
 
@@ -31,6 +32,10 @@ export default function FacultyIDCards() {
       <div className="no-print">
         <PageHeader title="Faculty ID Cards" subtitle={`${teachers.length} faculty cards ready to print`} actions={
           <div className="flex items-center gap-2 flex-wrap justify-end">
+            <Select value={orientation} onValueChange={setOrientation}>
+              <SelectTrigger data-testid="id-orientation-faculty" className="h-9 w-[180px]"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="landscape">Horizontal (Landscape)</SelectItem><SelectItem value="portrait">Vertical (Portrait)</SelectItem></SelectContent>
+            </Select>
             <Select value={perPage} onValueChange={setPerPage}>
               <SelectTrigger data-testid="stickers-perpage-faculty" className="h-9 w-[130px]"><SelectValue /></SelectTrigger>
               <SelectContent><SelectItem value="12">12 / page</SelectItem><SelectItem value="24">24 / page</SelectItem><SelectItem value="30">30 / page</SelectItem></SelectContent>
@@ -46,7 +51,7 @@ export default function FacultyIDCards() {
       </div>
       {teachers.length === 0 ? <Empty icon={IdIcon} title="No faculty yet" /> : (
         <div className="flex flex-wrap gap-6 justify-center">
-          {teachers.map((t) => <IDCard key={t.id} student={t} institute={institute} variant="faculty" />)}
+          {teachers.map((t) => <IDCard key={t.id} student={t} institute={institute} variant="faculty" orientation={orientation} />)}
         </div>
       )}
     </div>
