@@ -7,7 +7,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area,
 } from "recharts";
-import { Users, CalendarCheck, Wallet, UserCheck, MessageSquareWarning, BookOpen, Award, TrendingUp, Phone, GraduationCap, AlertTriangle, Clock, CalendarX, Sparkles, Download, Loader2, Megaphone } from "lucide-react";
+import { Users, CalendarCheck, Wallet, UserCheck, MessageSquareWarning, BookOpen, Award, TrendingUp, Phone, GraduationCap, AlertTriangle, Clock, CalendarX, Sparkles, Download, Loader2, Megaphone, IdCard, Receipt, FileText, CalendarDays, CheckCircle2, XCircle, ClipboardList } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -332,83 +332,189 @@ function TeacherDash() {
   );
 }
 
+function AttendanceCalendar({ rows }) {
+  const map = {};
+  (rows || []).forEach((r) => { map[r.date] = r.status; });
+  const now = new Date();
+  const year = now.getFullYear(), month = now.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDay = new Date(year, month, 1).getDay();
+  const monthName = now.toLocaleString("default", { month: "long", year: "numeric" });
+  const cells = [];
+  for (let i = 0; i < firstDay; i++) cells.push(null);
+  for (let dd = 1; dd <= daysInMonth; dd++) {
+    const key = `${year}-${String(month + 1).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
+    cells.push({ dd, status: map[key], isToday: dd === now.getDate() });
+  }
+  const tone = { present: "bg-emerald-500 text-white", absent: "bg-red-500 text-white", late: "bg-amber-400 text-white" };
+  return (
+    <div data-testid="attendance-calendar" className="card-premium rounded-2xl p-6 fade-up">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-semibold text-slate-800 font-heading flex items-center gap-2"><CalendarDays className="h-4 w-4 text-emerald-600" />Attendance · {monthName}</h3>
+        <div className="flex items-center gap-3 text-[11px] text-slate-500">
+          <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />Present</span>
+          <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-red-500" />Absent</span>
+        </div>
+      </div>
+      <div className="grid grid-cols-7 gap-1.5 text-center">
+        {["S", "M", "T", "W", "T", "F", "S"].map((w, i) => <div key={i} className="text-[11px] font-semibold text-slate-400 pb-1">{w}</div>)}
+        {cells.map((c, i) => (
+          <div key={i} className="aspect-square flex items-center justify-center">
+            {c && (
+              <span data-testid={c.status ? `cal-day-${c.status}` : undefined}
+                className={`h-8 w-8 rounded-lg grid place-items-center text-xs font-semibold ${c.status ? tone[c.status] || "bg-slate-200 text-slate-600" : "text-slate-400"} ${c.isToday ? "ring-2 ring-blue-500 ring-offset-1" : ""}`}>
+                {c.dd}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function StudentDash() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [d, setD] = useState(null);
-  const [ai, setAi] = useState(null);
-  const [aiLoading, setAiLoading] = useState(false);
-  useEffect(() => { api.get("/dashboard/student").then((r) => setD(r.data)); }, []);
+  const [hw, setHw] = useState([]);
+  const [fees, setFees] = useState([]);
+  useEffect(() => {
+    api.get("/dashboard/student").then((r) => setD(r.data)).catch(() => {});
+    api.get("/homework").then((r) => setHw(r.data || [])).catch(() => {});
+    api.get("/fees").then((r) => setFees(r.data || [])).catch(() => {});
+  }, []);
   if (!d) return <Loader />;
 
-  const downloadReport = () => {
+  const p = d.profile || {};
+  const classLabel = [p.class_name, p.section && `Sec ${p.section}`].filter(Boolean).join(" · ") || p.batch_name || "—";
+  const pendingHw = (hw || []).filter((h) => !h.my_submission).slice(0, 5);
+  const unpaidFees = (fees || []).filter((f) => f.status !== "paid");
+  const paidFees = (fees || []).filter((f) => f.status === "paid");
+  const totalDue = unpaidFees.reduce((a, f) => a + (Number(f.amount || 0) - Number(f.paid_amount || 0)), 0);
+
+  const authFetch = (path, errMsg) => {
     const token = localStorage.getItem("edusync_token");
-    fetch(`${API}/students/${user.id}/report`, { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => r.blob()).then((b) => window.open(URL.createObjectURL(b)))
-      .catch(() => toast.error("Could not open report card"));
-  };
-  const genAi = async () => {
-    setAiLoading(true);
-    try { const { data } = await api.get("/student/ai-summary"); setAi(data); }
-    catch (e) { toast.error("Could not generate insights"); }
-    finally { setAiLoading(false); }
+    fetch(`${API}${path}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => { if (!r.ok) throw new Error(); return r.blob(); })
+      .then((b) => window.open(URL.createObjectURL(b)))
+      .catch(() => toast.error(errMsg));
   };
 
   return (
-    <div>
-      <PageHeader title={`Hi, ${user.name}`} subtitle={`Student ID: ${user.student_id}`} actions={
-        <Button data-testid="student-report-card-btn" variant="outline" onClick={downloadReport}><Download className="h-4 w-4 mr-2" />My Report Card</Button>
-      } />
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-6">
-        <StatCard testid="s-att" label="Attendance" value={d.attendance_pct} suffix="%" decimals={1} icon={CalendarCheck} accent="#059669" delay={0} />
-        <StatCard testid="s-fees" label="Pending Fees" value={d.pending_fees} prefix="₹" icon={Wallet} accent="#7c3aed" delay={70} />
-        <StatCard testid="s-avg" label="Avg Score" value={d.avg_percentage} suffix="%" decimals={1} sub={`${d.results_count} exams`} icon={Award} accent="#8b5cf6" delay={140} />
-        <StatCard testid="s-hw" label="Homework" value={d.homework} sub="assignments" icon={BookOpen} accent="#1e3a8a" delay={210} />
+    <div className="space-y-6" data-testid="student-portal">
+      {/* Profile hero */}
+      <div className="relative rounded-3xl overflow-hidden text-white p-6 sm:p-7 fade-up" style={{ backgroundImage: "linear-gradient(120deg,#0b1e3b,#141d47 55%,#1a1240)" }}>
+        <div className="pointer-events-none absolute -top-16 -right-10 h-52 w-52 rounded-full" style={{ background: "radial-gradient(circle, rgba(37,99,235,0.5), transparent 70%)" }} />
+        <div className="pointer-events-none absolute -bottom-20 left-10 h-56 w-56 rounded-full" style={{ background: "radial-gradient(circle, rgba(16,185,129,0.4), transparent 70%)" }} />
+        <div className="relative flex flex-col sm:flex-row sm:items-center gap-5">
+          <div className="h-20 w-20 rounded-2xl bg-white/10 ring-2 ring-white/25 overflow-hidden grid place-items-center shrink-0 shadow-xl">
+            {p.photo_url ? <img src={p.photo_url} alt={p.name} className="h-full w-full object-cover" /> : <span className="text-3xl font-extrabold">{(p.name || user.name)?.[0]?.toUpperCase()}</span>}
+          </div>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-2xl sm:text-3xl font-extrabold font-heading leading-tight" data-testid="portal-student-name">{p.name || user.name}</h1>
+            <div className="flex flex-wrap items-center gap-2 mt-2 text-sm">
+              <span className="inline-flex items-center gap-1.5 bg-white/10 rounded-full px-3 py-1"><GraduationCap className="h-3.5 w-3.5" />{classLabel}</span>
+              <span className="inline-flex items-center gap-1.5 bg-white/10 rounded-full px-3 py-1 font-mono">{p.student_id || user.student_id}</span>
+              {p.roll_no && <span className="inline-flex items-center gap-1.5 bg-white/10 rounded-full px-3 py-1">Roll {p.roll_no}</span>}
+            </div>
+          </div>
+          <div className="flex sm:flex-col gap-2 shrink-0">
+            <Button data-testid="portal-idcard-btn" size="sm" onClick={() => navigate("/app/idcard")} className="bg-white text-slate-900 hover:bg-slate-100"><IdCard className="h-4 w-4 mr-1.5" />ID Card</Button>
+            <Button data-testid="portal-report-btn" size="sm" variant="outline" onClick={() => authFetch(`/students/${user.id}/report`, "Could not open report card")} className="border-white/40 text-white hover:bg-white/10 hover:text-white bg-transparent"><FileText className="h-4 w-4 mr-1.5" />Report Card</Button>
+          </div>
+        </div>
       </div>
+
+      {/* KPI stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard testid="s-att" label="Attendance" value={d.attendance_pct} suffix="%" decimals={1} icon={CalendarCheck} accent="#059669" delay={0} />
+        <StatCard testid="s-avg" label="Avg Score" value={d.avg_percentage} suffix="%" decimals={1} sub={`${d.results_count} exams`} icon={Award} accent="#8b5cf6" delay={70} />
+        <StatCard testid="s-fees" label="Fees Due" value={totalDue} prefix="₹" icon={Wallet} accent="#7c3aed" delay={140} />
+        <StatCard testid="s-hw" label="Pending Homework" value={pendingHw.length} sub="to submit" icon={BookOpen} accent="#1e3a8a" delay={210} />
+      </div>
+
+      {/* Academic Overview + Financial Status */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-6">
+          {/* Today's timetable */}
+          <div className="card-premium rounded-2xl p-6 fade-up" data-testid="today-timetable">
+            <h3 className="font-semibold text-slate-800 font-heading mb-4 flex items-center gap-2"><Clock className="h-4 w-4 text-blue-600" />Today's Classes</h3>
+            {(d.today_timetable || []).length === 0 ? (
+              <p className="text-sm text-slate-400">No classes scheduled for today. Enjoy your break!</p>
+            ) : (
+              <div className="space-y-2.5">
+                {d.today_timetable.map((t, i) => (
+                  <div key={i} data-testid={`tt-slot-${i}`} className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/70 px-3.5 py-2.5">
+                    <span className="text-xs font-mono font-semibold text-blue-700 bg-blue-50 rounded-lg px-2 py-1 shrink-0">{t.slot}</span>
+                    <div className="min-w-0 flex-1"><p className="font-semibold text-slate-800 text-sm truncate">{t.subject}</p><p className="text-xs text-slate-400 truncate">{t.teacher_name}{t.room ? ` · ${t.room}` : ""}</p></div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Pending homework + latest marks */}
+          <div className="grid sm:grid-cols-2 gap-6">
+            <div className="card-premium rounded-2xl p-6 fade-up" data-testid="pending-homework">
+              <h3 className="font-semibold text-slate-800 font-heading mb-4 flex items-center gap-2"><ClipboardList className="h-4 w-4 text-violet-600" />Pending Homework</h3>
+              {pendingHw.length === 0 ? <p className="text-sm text-slate-400">All caught up! 🎉</p> : (
+                <div className="space-y-2.5">
+                  {pendingHw.map((h) => (
+                    <button key={h.id} data-testid={`hw-item-${h.id}`} onClick={() => navigate("/app/homework")} className="w-full text-left rounded-xl border border-slate-100 hover:border-violet-300 px-3.5 py-2.5 transition-colors">
+                      <p className="font-semibold text-slate-800 text-sm truncate">{h.title}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">{h.subject || "General"}{h.deadline ? ` · due ${fmtDate(h.deadline)}` : ""}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="card-premium rounded-2xl p-6 fade-up" data-testid="latest-marks">
+              <h3 className="font-semibold text-slate-800 font-heading mb-4 flex items-center gap-2"><Award className="h-4 w-4 text-amber-500" />Latest Marks</h3>
+              {(d.recent_marks || []).length === 0 ? <p className="text-sm text-slate-400">No results yet.</p> : (
+                <div className="space-y-2.5">
+                  {d.recent_marks.map((m, i) => (
+                    <div key={i} data-testid={`mark-item-${i}`} className="flex items-center justify-between rounded-xl border border-slate-100 px-3.5 py-2.5">
+                      <div className="min-w-0"><p className="font-semibold text-slate-800 text-sm truncate">{m.subject}</p><p className="text-xs text-slate-400">Grade {m.grade}</p></div>
+                      <span className={`text-lg font-extrabold ${m.percentage >= 75 ? "text-emerald-600" : m.percentage >= 40 ? "text-blue-600" : "text-red-600"}`}>{m.percentage}%</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Financial status */}
+        <div className="card-premium rounded-2xl p-6 fade-up flex flex-col" data-testid="financial-status">
+          <h3 className="font-semibold text-slate-800 font-heading mb-4 flex items-center gap-2"><Wallet className="h-4 w-4 text-emerald-600" />Fee Status</h3>
+          <div className={`rounded-2xl p-4 mb-4 text-center ${totalDue > 0 ? "bg-orange-50 border border-orange-200" : "bg-emerald-50 border border-emerald-200"}`}>
+            {totalDue > 0 ? (
+              <><p className="text-xs uppercase tracking-wide text-orange-500 font-semibold">Total Overdue</p><p className="text-3xl font-extrabold text-orange-600 mt-1" data-testid="fee-due-amount">{money(totalDue)}</p><Button data-testid="pay-fees-btn" size="sm" onClick={() => navigate("/app/fees")} className="mt-3 btn-gradient text-white">Pay Now</Button></>
+            ) : (
+              <><CheckCircle2 className="h-8 w-8 text-emerald-600 mx-auto mb-1" /><p className="font-bold text-emerald-700" data-testid="fee-cleared">All fees cleared</p></>
+            )}
+          </div>
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Recent Receipts</p>
+          <div className="space-y-2 overflow-y-auto flex-1">
+            {paidFees.length === 0 ? <p className="text-sm text-slate-400">No paid receipts yet.</p> : paidFees.slice(0, 6).map((f) => (
+              <button key={f.id} data-testid={`receipt-${f.id}`} onClick={() => authFetch(`/fees/${f.id}/receipt`, "Receipt not available")} className="w-full flex items-center justify-between rounded-xl border border-slate-100 hover:border-emerald-300 px-3.5 py-2.5 transition-colors text-left">
+                <div className="min-w-0"><p className="font-semibold text-slate-800 text-sm truncate">{f.month}</p><p className="text-xs text-slate-400 font-mono truncate">{f.receipt_no || "—"}</p></div>
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700"><Receipt className="h-3.5 w-3.5" />{money(f.paid_amount || f.amount)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Attendance calendar */}
+      <AttendanceCalendar rows={d.attendance_calendar} />
 
       <AnnouncementsPanel />
-      <div data-testid="student-ai-insights" className="rounded-2xl border border-slate-200 bg-white p-6 mb-6 stat-card">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-violet-500 to-blue-500 grid place-items-center"><Sparkles className="h-4 w-4 text-white" /></div>
-            <h3 className="font-semibold text-slate-800 font-heading">AI Performance Insights</h3>
-          </div>
-          <Button data-testid="student-ai-btn" size="sm" variant="outline" onClick={genAi} disabled={aiLoading}>{aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Generate"}</Button>
-        </div>
-        <div className="grid grid-cols-3 gap-3 mb-3">
-          {[["Attendance", `${d.attendance_pct}%`, d.attendance_pct >= 75 ? "text-emerald-600" : "text-red-600"],
-            ["Avg Score", `${d.avg_percentage}%`, "text-violet-600"],
-            ["Fee Status", d.pending_fees > 0 ? `₹${d.pending_fees} due` : "Cleared", d.pending_fees > 0 ? "text-orange-600" : "text-emerald-600"]].map(([k, v, c]) => (
-            <div key={k} className="rounded-xl border border-slate-200 p-3 text-center">
-              <p className={`text-lg font-extrabold ${c}`}>{v}</p><p className="text-[11px] text-slate-400">{k}</p>
-            </div>
-          ))}
-        </div>
-        {ai?.summary ? <p data-testid="student-ai-summary" className="text-sm text-slate-600 bg-indigo-50 rounded-lg p-3 leading-relaxed">{ai.summary}</p>
-          : <p className="text-sm text-slate-400">Tap Generate for a personalised AI summary of your attendance, results and fees.</p>}
-      </div>
 
-      <ChartCard title="Performance Trend">
-        {d.trend.length ? (
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={d.trend} margin={{ left: -12 }}>
-              <defs>
-                <linearGradient id="perfGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#7c3aed" />
-                  <stop offset="100%" stopColor="#a78bfa" />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />
-              <XAxis dataKey="subject" stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} />
-              <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} domain={[0, 100]} />
-              <Tooltip content={<ChartTooltip formatter={(v) => `${v}%`} />} cursor={{ fill: "rgba(147,51,234,0.06)" }} />
-              <Bar dataKey="percentage" fill="url(#perfGrad)" radius={[8, 8, 0, 0]} barSize={42} />
-            </BarChart>
-          </ResponsiveContainer>
-        ) : <p className="text-sm text-slate-400">No results yet.</p>}
-      </ChartCard>
-
-      <div className="mt-6">
-        <h3 className="font-heading font-bold text-slate-800 mb-3 flex items-center gap-2"><Sparkles className="h-4 w-4 text-blue-600" />My AI Performance Insights</h3>
+      {/* AI Progress Report */}
+      <div>
+        <h3 className="font-heading font-bold text-slate-800 mb-3 flex items-center gap-2"><Sparkles className="h-4 w-4 text-blue-600" />AI Progress Report</h3>
         <StudentInsights studentId={user.id} />
       </div>
     </div>

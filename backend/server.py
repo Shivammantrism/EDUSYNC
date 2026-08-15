@@ -463,6 +463,10 @@ class StudentIn(BaseModel):
     parent_name: Optional[str] = ""
     parent_phone: Optional[str] = ""
     parent_email: Optional[str] = ""
+    roll_no: Optional[str] = ""
+    dob: Optional[str] = ""
+    blood_group: Optional[str] = ""
+    address: Optional[str] = ""
     batch_id: Optional[str] = ""
     password: Optional[str] = "student123"
     monthly_fee: float = Field(default=0, ge=0)
@@ -1095,7 +1099,7 @@ async def resend_student_credentials(sid: str, user=Depends(require("principal",
 
 @api.put("/students/{sid}")
 async def update_student(sid: str, payload: dict, user=Depends(require("principal"))):
-    allowed = {"name", "age", "gender", "batch_id", "parent_name", "parent_phone", "parent_email", "monthly_fee", "photo_url", "template"}
+    allowed = {"name", "age", "gender", "batch_id", "parent_name", "parent_phone", "parent_email", "monthly_fee", "photo_url", "template", "email", "dob", "blood_group", "address", "roll_no"}
     upd = {k: v for k, v in payload.items() if k in allowed and v is not None}
     if upd.get("age") not in (None, ""):
         upd["age"] = int(upd["age"])
@@ -1169,14 +1173,6 @@ async def get_student(sid: str, user=Depends(get_current_user)):
     if not s:
         raise HTTPException(404, "Student not found")
     return s
-
-
-@api.put("/students/{sid}")
-async def update_student(sid: str, body: StudentIn, user=Depends(require("principal"))):
-    upd = body.model_dump(exclude_none=True)
-    upd.pop("password", None)
-    await db.students.update_one({"id": sid, "institute_id": user["institute_id"]}, {"$set": upd})
-    return await db.students.find_one({"id": sid}, {"_id": 0, "password_hash": 0})
 
 
 @api.delete("/students/{sid}")
@@ -2793,15 +2789,30 @@ async def student_dashboard(user=Depends(require("student"))):
     total = await db.attendance.count_documents({"student_id": sid})
     present = await db.attendance.count_documents({"student_id": sid, "status": "present"})
     att_pct = round(present / total * 100, 1) if total else 0
-    pending = await db.fees.find({"student_id": sid, "status": "pending"}, {"amount": 1, "_id": 0}).to_list(500)
-    pending_fees = sum(f["amount"] for f in pending)
-    results = await db.results.find({"student_id": sid}, {"_id": 0}).to_list(500)
+    pending = await db.fees.find({"student_id": sid, "status": {"$ne": "paid"}}, {"amount": 1, "paid_amount": 1, "_id": 0}).to_list(500)
+    pending_fees = round(sum(float(f.get("amount", 0) or 0) - float(f.get("paid_amount", 0) or 0) for f in pending), 2)
+    results = await db.results.find({"student_id": sid}, {"_id": 0}).sort("created_at", 1).to_list(500)
     avg = round(sum(r["percentage"] for r in results) / len(results), 1) if results else 0
-    s = await db.students.find_one({"id": sid})
+    s = await db.students.find_one({"id": sid}) or {}
+    batch = await db.batches.find_one({"id": s.get("batch_id", "")}, {"_id": 0}) or {}
     homework = await db.homework.count_documents({"batch_id": s.get("batch_id", "")})
+    today_day = datetime.now().strftime("%A")
+    tt = await db.timetable.find({"batch_id": s.get("batch_id", ""), "day": today_day},
+                                 {"_id": 0, "slot": 1, "subject": 1, "room": 1, "teacher_name": 1}).to_list(50)
+    tt.sort(key=lambda x: x.get("slot", ""))
+    recent = list(reversed(results))[:5]
+    recent_marks = [{"subject": r.get("subject"), "percentage": r.get("percentage"), "grade": r.get("grade")} for r in recent]
+    ym = datetime.now().strftime("%Y-%m")
+    cal_rows = await db.attendance.find({"student_id": sid, "date": {"$regex": f"^{ym}"}},
+                                        {"_id": 0, "date": 1, "status": 1}).to_list(60)
+    attendance_calendar = [{"date": c["date"], "status": c["status"]} for c in cal_rows]
     return {"attendance_pct": att_pct, "pending_fees": pending_fees, "avg_percentage": avg,
             "homework": homework, "results_count": len(results),
-            "trend": [{"subject": r["subject"], "percentage": r["percentage"]} for r in results[-6:]]}
+            "trend": [{"subject": r["subject"], "percentage": r["percentage"]} for r in results[-6:]],
+            "profile": {"name": s.get("name", user["name"]), "student_id": s.get("student_id", user.get("student_id", "")),
+                        "class_name": batch.get("class_name") or batch.get("name") or "", "section": batch.get("section", ""),
+                        "batch_name": batch.get("name", ""), "roll_no": s.get("roll_no", ""), "photo_url": s.get("photo_url", "")},
+            "today_timetable": tt, "recent_marks": recent_marks, "attendance_calendar": attendance_calendar}
 
 
 # ---------------------------------------------------------------- AI

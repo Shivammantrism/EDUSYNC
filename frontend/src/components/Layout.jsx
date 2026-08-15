@@ -5,6 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { MODULE_ACCENTS } from "@/lib/modules";
 import api from "@/lib/api";
 import InstallPrompt from "@/components/InstallPrompt";
+import StudyBuddyWidget from "@/components/StudyBuddyWidget";
 import { ensureNotificationPermission, showLocalNotification, notificationPermission } from "@/lib/pwa";
 import {
   LayoutDashboard, Users, GraduationCap, CalendarCheck, Wallet, FileText,
@@ -169,17 +170,12 @@ const NAV = {
   ],
   student: [
     ["/app/dashboard", "Dashboard", LayoutDashboard, "dashboard"],
-    ["/app/timetable", "My Timetable", CalendarDays, "timetable"],
     ["/app/attendance", "My Attendance", CalendarCheck, "attendance"],
-    ["/app/fees", "Fees & Receipts", Wallet, "fees"],
-    ["/app/exams", "My Results", FileText, "exams"],
     ["/app/quizzes", "Online Tests", ListChecks, "quizzes"],
     ["/app/homework", "Homework", BookOpen, "homework"],
-    ["/app/assistant", "AI Study Buddy", Sparkles, "quizzes"],
+    ["/app/fees", "Fees & Receipts", Wallet, "fees"],
+    ["/app/complaints", "Raise Complaint", MessageSquareWarning, "complaints"],
     ["/app/idcard", "Digital ID Card", IdCard, "idcard"],
-    ["/app/announcements", "Announcements", Megaphone, "announcements"],
-    ["/app/complaints", "Complaints", MessageSquareWarning, "complaints"],
-    ["/app/gallery", "Photo Gallery", Images, "gallery"],
     ["/app/change-password", "Change Password", KeyRound, "settings"],
   ],
 };
@@ -277,6 +273,7 @@ export default function Layout() {
         </AnimatePresence>
       </div>
       <InstallPrompt />
+      {user?.role === "student" && <StudyBuddyWidget />}
     </div>
   );
 }

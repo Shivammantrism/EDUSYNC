@@ -27,7 +27,7 @@ export default function Students() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [credResult, setCredResult] = useState(null);
-  const blank = { name: "", age: "", gender: "Male", batch_id: "", email: "", parent_name: "", parent_phone: "", parent_email: "", monthly_fee: 2000, photo_url: "", template: "classic", password: "", parental_consent: true };
+  const blank = { name: "", age: "", gender: "Male", batch_id: "", email: "", parent_name: "", parent_phone: "", parent_email: "", roll_no: "", dob: "", blood_group: "", address: "", monthly_fee: 2000, photo_url: "", template: "classic", password: "", parental_consent: true };
   const [form, setForm] = useState(blank);
 
   const load = () => api.get("/students").then((r) => setStudents(r.data));
@@ -58,7 +58,7 @@ export default function Students() {
     } catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
     finally { setSaving(false); }
   };
-  const openEdit = (s) => { setForm({ name: s.name || "", age: s.age || "", gender: s.gender || "Male", batch_id: s.batch_id || "", email: s.email || "", parent_name: s.parent_name || "", parent_phone: s.parent_phone || "", parent_email: s.parent_email || "", monthly_fee: s.monthly_fee || 0, photo_url: s.photo_url || "", template: s.template || "classic", password: "", parental_consent: true }); setEditId(s.id); setOpen(true); };
+  const openEdit = (s) => { setForm({ name: s.name || "", age: s.age || "", gender: s.gender || "Male", batch_id: s.batch_id || "", email: s.email || "", parent_name: s.parent_name || "", parent_phone: s.parent_phone || "", parent_email: s.parent_email || "", roll_no: s.roll_no || "", dob: s.dob || "", blood_group: s.blood_group || "", address: s.address || "", monthly_fee: s.monthly_fee || 0, photo_url: s.photo_url || "", template: s.template || "classic", password: "", parental_consent: true }); setEditId(s.id); setOpen(true); };
   const resend = async (s) => {
     try {
       const { data } = await api.post(`/students/${s.id}/resend-credentials`);
@@ -112,6 +112,16 @@ export default function Students() {
                 </div>
                 <div><Label>Parent / Guardian Email <span className="text-xs font-normal text-slate-400">(receipts & login)</span></Label><Input data-testid="student-parent-email" type="email" value={form.parent_email} onChange={(e) => setForm({ ...form, parent_email: e.target.value })} placeholder="parent@example.com" /></div>
                 <div><Label>Student Email <span className="text-xs font-normal text-slate-400">(optional — gets own login)</span></Label><Input data-testid="student-email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="student@example.com" /></div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><Label>Date of Birth</Label><Input data-testid="student-dob" type="date" value={form.dob} onChange={(e) => setForm({ ...form, dob: e.target.value })} /></div>
+                  <div><Label>Blood Group</Label>
+                    <Select value={form.blood_group} onValueChange={(v) => setForm({ ...form, blood_group: v })}>
+                      <SelectTrigger data-testid="student-blood-group"><SelectValue placeholder="Select" /></SelectTrigger>
+                      <SelectContent>{["A+","A-","B+","B-","O+","O-","AB+","AB-"].map((bg) => <SelectItem key={bg} value={bg}>{bg}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div><Label>Home Address</Label><Input data-testid="student-address" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Full residential address" /></div>
                 <div className="grid grid-cols-2 gap-3">
                   <div><Label>Monthly Fee (₹)</Label><Input data-testid="student-monthly-fee" type="number" value={form.monthly_fee} onChange={(e) => setForm({ ...form, monthly_fee: e.target.value })} /></div>
                   <div><Label>ID Card Template</Label>
