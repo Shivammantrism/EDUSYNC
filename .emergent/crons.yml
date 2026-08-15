@@ -21,3 +21,10 @@ crons:
     method: POST
     # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
     enabled: true
+  - name: event-reminders
+    description: "Daily — reminds confirmed students & parents about events happening tomorrow"
+    cron: "0 18 * * *"
+    timezone: "Asia/Kolkata"
+    endpoint: "{{BASE_URL}}/api/cron/event-reminders"
+    method: POST
+    enabled: true

@@ -3,6 +3,11 @@
 **By Privam Solutions · Multi-institute school management SaaS**
 Last updated: 2026-08-10
 
+## Changelog — 2026-08-15
+- ID Card (IDCard.jsx landscape front) redesigned per user: premium tinted-gradient background + faint watermark initial + soft accent glows, removed the "OFFICIAL SEAL" element, moved student data & photo frame higher (top-aligned body), bold name, lighter (non-bold) detail values.
+- Events (Events.jsx): added "Select all / Clear all" staff button in the private-visibility invite picker; completed the Calendar (month-grid) view so the list/calendar toggle is functional (today highlighted, prev/next month nav, events shown as colored chips per day); Create dialog now shows Edit title + "Save Changes" when editing.
+
+
 ## Original Problem Statement
 Multi-institute management SaaS with two connected portals sharing one database. Each institute gets its own workspace. Three roles: Principal (full access), Teacher (own classes/students), Student (own data). Modules: principal dashboard w/ KPIs+charts, student management + photo/PDF docs + printable QR ID cards, batches/classes, auto timetable scheduler, QR attendance + teacher self-attendance + leave approval, fee management (Razorpay UPI + receipts + reminders + monthly plans), exams/results with grades & rankings, homework + submissions, staff salary + slips, one-click PDF report cards, announcement board, three-way complaint management, admission enquiry tracker, student portal.
 

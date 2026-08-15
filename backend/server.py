@@ -3117,6 +3117,55 @@ async def event_attendance(eid: str, body: EventAttendanceIn, user=Depends(requi
     return {"ok": True}
 
 
+@api.put("/events/{eid}")
+async def update_event(eid: str, body: EventIn, user=Depends(require("principal", "teacher"))):
+    e = await db.events.find_one({"id": eid, "institute_id": user["institute_id"]})
+    if not e:
+        raise HTTPException(404, "Not found")
+    await db.events.update_one({"id": eid}, {"$set": {"title": body.title, "date": body.date, "time": body.time or "",
+        "venue": body.venue or "", "description": body.description or "", "visibility": body.visibility,
+        "attachment_url": body.attachment_url or "", "invite_batches": body.invite_batches,
+        "invite_students": body.invite_students, "invite_staff": body.invite_staff}})
+    for p in e.get("participants", []):
+        stu = await db.students.find_one({"id": p.get("student_id")}, {"_id": 0}) or {}
+        await notify_student(stu, user["institute_id"], "notice", f"Event updated: {body.title} ({body.date}{(' ' + body.time) if body.time else ''})")
+    return {"ok": True}
+
+
+@api.delete("/events/{eid}")
+async def cancel_event(eid: str, user=Depends(require("principal", "teacher"))):
+    e = await db.events.find_one({"id": eid, "institute_id": user["institute_id"]})
+    if not e:
+        raise HTTPException(404, "Not found")
+    for p in e.get("participants", []):
+        stu = await db.students.find_one({"id": p.get("student_id")}, {"_id": 0}) or {}
+        await notify_student(stu, user["institute_id"], "notice", f"Event cancelled: {e.get('title')} ({e.get('date')})")
+    await db.events.delete_one({"id": eid})
+    return {"ok": True}
+
+
+async def _event_reminders():
+    from datetime import date as _date, timedelta as _td
+    tomorrow = (_date.today() + _td(days=1)).isoformat()
+    events = await db.events.find({"date": tomorrow}, {"_id": 0}).to_list(1000)
+    for e in events:
+        when = f"{e.get('date')}{(' ' + e.get('time')) if e.get('time') else ''}"
+        for p in e.get("participants", []):
+            stu = await db.students.find_one({"id": p.get("student_id")}, {"_id": 0}) or {}
+            await notify_student(stu, e["institute_id"], "notice", f"Reminder: {e.get('title')} is tomorrow ({when}) at {e.get('venue') or 'school'}")
+
+
+@api.post("/cron/event-reminders")
+async def cron_event_reminders(request: Request):
+    secret = os.environ.get("WEBHOOK_CRON_SECRET", "")
+    auth = request.headers.get("Authorization", "")
+    token = auth[7:] if auth.startswith("Bearer ") else ""
+    if not secret or not hmac.compare_digest(token, secret):
+        raise HTTPException(401, "Unauthorized")
+    asyncio.create_task(_event_reminders())
+    return {"status": "accepted"}
+
+
 @api.get("/students/{sid}/insights")
 async def student_insights(sid: str, user=Depends(get_current_user)):
     iid = user["institute_id"]

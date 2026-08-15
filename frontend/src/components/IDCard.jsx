@@ -24,6 +24,7 @@ export default function IDCard({ student, institute, variant = "student", orient
   const logo = inst.logo_url ? fileUrl(inst.logo_url) : null;
   const seal = inst.seal_url ? fileUrl(inst.seal_url) : null;
   const website = inst.website || "";
+  const tint = (hex, a) => { const h = (hex || "#000").replace("#", ""); const f = h.length === 3 ? h.split("").map((c) => c + c).join("") : h; const n = parseInt(f, 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; };
 
   const fields = isFaculty
     ? [["Name", student.name], ["Staff ID", idValue], ["Designation", student.designation || "Teacher"], ["DOB", student.dob], ["Subjects", (student.subjects || []).join(", ")], ["Blood Group", student.blood_group], ["Mobile", contact], ["Email", email]]
@@ -73,9 +74,14 @@ export default function IDCard({ student, institute, variant = "student", orient
   if (isLandscape) {
     return (
       <div id="id-card" data-testid={isFaculty ? "faculty-id-card" : "id-card"} className="id-card-cr80 mx-auto"
-        style={{ ...base, background: "#fff", border: `0.4mm solid #e2e8f0` }}>
+        style={{ ...base, background: `linear-gradient(135deg,#ffffff 0%,#f7f9fc 52%,${tint(P, 0.10)} 100%)`, border: `0.4mm solid ${tint(P, 0.25)}` }}>
+        {/* premium accent glows */}
+        <div style={{ position: "absolute", top: "-7mm", right: "-7mm", width: "26mm", height: "26mm", borderRadius: "50%", background: tint(A, 0.10), pointerEvents: "none" }} />
+        <div style={{ position: "absolute", bottom: "9mm", left: "-6mm", width: "22mm", height: "22mm", borderRadius: "50%", background: tint(P, 0.06), pointerEvents: "none" }} />
+        {/* faint watermark initial */}
+        <div style={{ position: "absolute", right: "3mm", bottom: "10.5mm", fontSize: "22mm", fontWeight: 900, color: tint(P, 0.05), lineHeight: 1, pointerEvents: "none", userSelect: "none" }}>{(instName || "E")[0]}</div>
         {/* Header */}
-        <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "2mm 3mm 1.4mm", borderBottom: `0.5mm solid ${GOLD}` }}>
+        <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "1.8mm 3mm 1.2mm", borderBottom: `0.5mm solid ${GOLD}` }}>
           <div style={{ display: "flex", alignItems: "center", gap: "1.4mm", width: "26%" }}>
             {logo && <img src={logo} alt="" style={{ height: "8mm", width: "8mm", objectFit: "contain" }} />}
             <span style={{ fontSize: "1.5mm", color: A, fontWeight: 700, lineHeight: 1.1 }}>{tagline}</span>
@@ -87,21 +93,17 @@ export default function IDCard({ student, institute, variant = "student", orient
           <div style={{ width: "26%", display: "flex", justifyContent: "flex-end", zIndex: 1 }}><QR size={40} /></div>
         </div>
         {/* Body */}
-        <div style={{ display: "flex", gap: "3mm", padding: "2mm 3mm", height: "calc(100% - 13mm - 9mm)", position: "relative" }}>
-          <Photo style={{ width: "20mm", height: "100%" }} />
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", gap: "0.35mm" }}>
+        <div style={{ display: "flex", gap: "3mm", padding: "1.4mm 3mm 0", height: "calc(100% - 11mm - 9mm)", alignItems: "flex-start", position: "relative" }}>
+          <Photo style={{ width: "20mm", height: "25mm" }} />
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.45mm", paddingTop: "0.4mm" }}>
             {fields.filter(([, v]) => v && String(v).trim()).map(([k, v]) => (
-              <div key={k} style={{ display: "flex", alignItems: "baseline", fontSize: k === "Name" ? "2.3mm" : "1.85mm", lineHeight: 1.25 }}>
-                <span style={{ width: "22mm", flexShrink: 0, color: "#475569", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05mm", fontSize: "1.7mm" }}>{k}</span>
+              <div key={k} style={{ display: "flex", alignItems: "baseline", fontSize: k === "Name" ? "2.5mm" : "1.85mm", lineHeight: 1.28 }}>
+                <span style={{ width: "22mm", flexShrink: 0, color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05mm", fontSize: "1.65mm" }}>{k}</span>
                 <span style={{ color: P, fontWeight: 800 }}>:&nbsp;</span>
-                <span style={{ color: P, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{v}</span>
+                <span style={{ color: P, fontWeight: k === "Name" ? 800 : 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{v}</span>
               </div>
             ))}
           </div>
-          {/* Gold seal / watermark bottom-right */}
-          {seal
-            ? <img src={seal} alt="" style={{ position: "absolute", right: "3mm", bottom: "1mm", height: "13mm", width: "13mm", objectFit: "contain", opacity: 0.55, pointerEvents: "none" }} />
-            : <div style={{ position: "absolute", right: "3mm", bottom: "1mm", height: "12mm", width: "12mm", borderRadius: "50%", border: `0.4mm solid ${GOLD}`, color: GOLD, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.4mm", fontWeight: 700, textAlign: "center", opacity: 0.6, pointerEvents: "none" }}>OFFICIAL<br />SEAL</div>}
         </div>
         {/* Footer */}
         <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "9mm", background: P, color: "#fff", display: "flex", alignItems: "center", flexWrap: "wrap", gap: "1mm 3mm", padding: "0 3mm", fontSize: "1.55mm" }}>
