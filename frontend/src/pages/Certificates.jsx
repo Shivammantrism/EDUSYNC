@@ -14,10 +14,13 @@ const TYPES = [["achievement", "Achievement"], ["participation", "Participation"
 export default function Certificates() {
   const [students, setStudents] = useState([]);
   const [certs, setCerts] = useState(null);
-  const [form, setForm] = useState({ student_id: "", type: "bonafide", session: "2025-26", remarks: "" });
+  const [form, setForm] = useState({ student_id: "", type: "bonafide", session: "2025-26", remarks: "", signatory_name: "", signatory_designation: "" });
+  const [batches, setBatches] = useState([]);
+  const [bulkBatch, setBulkBatch] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const load = () => api.get("/certificates").then((r) => setCerts(r.data));
-  useEffect(() => { api.get("/students").then((r) => setStudents(r.data)); load(); }, []);
+  useEffect(() => { api.get("/students").then((r) => setStudents(r.data)); api.get("/batches").then((r) => setBatches(r.data)).catch(() => {}); load(); }, []);
 
   const openPdf = (id) => {
     const token = localStorage.getItem("edusync_token");
@@ -32,6 +35,12 @@ export default function Certificates() {
     catch (e) { toast.error("Could not generate certificate"); } finally { setBusy(false); }
   };
   const copyLink = (code) => { navigator.clipboard.writeText(`${window.location.origin}/verify-cert/${code}`); toast.success("Verification link copied"); };
+  const doBulk = async () => {
+    if (!bulkBatch) return toast.error("Select a class");
+    setBulkBusy(true);
+    try { const { data } = await api.post("/certificates/bulk", { batch_id: bulkBatch, type: form.type, session: form.session, remarks: form.remarks, signatory_name: form.signatory_name, signatory_designation: form.signatory_designation }); toast.success(`Issued ${data.count} certificate(s) to the class`); await load(); }
+    catch (e) { toast.error("Could not bulk-issue"); } finally { setBulkBusy(false); }
+  };
 
   if (!certs) return <Loader />;
   return (
@@ -53,8 +62,21 @@ export default function Certificates() {
           </div>
           <div><Label>Academic Session</Label><Input data-testid="cert-session" value={form.session} onChange={(e) => setForm({ ...form, session: e.target.value })} placeholder="2025-26" /></div>
           <div><Label>Remarks / Achievement <span className="text-xs text-slate-400">(optional)</span></Label><Input data-testid="cert-remarks" value={form.remarks} onChange={(e) => setForm({ ...form, remarks: e.target.value })} placeholder="e.g. First prize in Science Quiz" /></div>
+          <div><Label>Signatory Name <span className="text-xs text-slate-400">(optional)</span></Label><Input data-testid="cert-signatory-name" value={form.signatory_name} onChange={(e) => setForm({ ...form, signatory_name: e.target.value })} placeholder="e.g. Dr. Shivam Mantri" /></div>
+          <div><Label>Signatory Designation <span className="text-xs text-slate-400">(optional)</span></Label><Input data-testid="cert-signatory-desig" value={form.signatory_designation} onChange={(e) => setForm({ ...form, signatory_designation: e.target.value })} placeholder="e.g. Principal" /></div>
         </div>
-        <Button data-testid="cert-generate-btn" onClick={gen} disabled={busy} className="btn-gradient mt-4"><Award className="h-4 w-4 mr-2" />{busy ? "Generating…" : "Generate Certificate"}</Button>
+        <div className="flex flex-wrap items-end gap-3 mt-4">
+          <Button data-testid="cert-generate-btn" onClick={gen} disabled={busy} className="btn-gradient"><Award className="h-4 w-4 mr-2" />{busy ? "Generating…" : "Generate Certificate"}</Button>
+          <div className="flex items-end gap-2 ml-auto">
+            <div><Label className="text-xs text-slate-400">Bulk issue to a class</Label>
+              <Select value={bulkBatch} onValueChange={setBulkBatch}>
+                <SelectTrigger data-testid="cert-bulk-batch" className="w-[180px]"><SelectValue placeholder="Select class" /></SelectTrigger>
+                <SelectContent>{batches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <Button data-testid="cert-bulk-btn" variant="outline" onClick={doBulk} disabled={bulkBusy}>{bulkBusy ? "Issuing…" : "Issue to whole class"}</Button>
+          </div>
+        </div>
       </Card>
       <h3 className="font-semibold text-slate-700 mb-3">Recent Certificates</h3>
       {certs.length === 0 ? <Empty icon={Award} title="No certificates yet" /> : (

@@ -593,6 +593,17 @@ class CertificateIn(BaseModel):
     type: str
     session: Optional[str] = ""
     remarks: Optional[str] = ""
+    signatory_name: Optional[str] = ""
+    signatory_designation: Optional[str] = ""
+
+
+class BulkCertIn(BaseModel):
+    batch_id: str
+    type: str
+    session: Optional[str] = ""
+    remarks: Optional[str] = ""
+    signatory_name: Optional[str] = ""
+    signatory_designation: Optional[str] = ""
 
 
 class ForgotReq(BaseModel):
@@ -3271,9 +3282,36 @@ async def create_certificate(body: CertificateIn, user=Depends(require("principa
            "type": body.type, "type_label": CERT_TYPES[body.type], "cert_no": cert_no, "verify_code": code,
            "session": body.session or "", "remarks": body.remarks or "", "student_name": s.get("name"),
            "parent_name": s.get("parent_name") or "", "roll_no": s.get("roll_no") or "", "student_id_code": s.get("student_id"),
-           "class_label": cls_label, "issued_by": user.get("name", ""), "created_at": now_iso()}
+           "class_label": cls_label, "issued_by": user.get("name", ""), "created_at": now_iso(),
+           "signatory_name": body.signatory_name or "", "signatory_designation": body.signatory_designation or ""}
     await db.certificates.insert_one(doc)
     return {k: v for k, v in doc.items() if k != "_id"}
+
+
+@api.post("/certificates/bulk")
+async def bulk_certificates(body: BulkCertIn, user=Depends(require("principal"))):
+    if body.type not in CERT_TYPES:
+        raise HTTPException(400, "Invalid certificate type")
+    students = await db.students.find({"batch_id": body.batch_id, "institute_id": user["institute_id"]}, {"_id": 0, "password_hash": 0}).to_list(2000)
+    if not students:
+        raise HTTPException(404, "No students in this class")
+    batch = await db.batches.find_one({"id": body.batch_id}, {"_id": 0}) or {}
+    cls_label = batch.get("name") or batch.get("class_name") or "-"
+    created = []
+    for s in students:
+        seq = await next_seq(user["institute_id"], "cert_seq")
+        cert_no = f"CERT-{datetime.now().strftime('%Y')}-{seq:04d}"
+        code = uuid.uuid4().hex[:10].upper()
+        cid = str(uuid.uuid4())
+        doc = {"id": cid, "institute_id": user["institute_id"], "student_id": s["id"], "type": body.type,
+               "type_label": CERT_TYPES[body.type], "cert_no": cert_no, "verify_code": code, "session": body.session or "",
+               "remarks": body.remarks or "", "student_name": s.get("name"), "parent_name": s.get("parent_name") or "",
+               "roll_no": s.get("roll_no") or "", "student_id_code": s.get("student_id"), "class_label": cls_label,
+               "issued_by": user.get("name", ""), "created_at": now_iso(),
+               "signatory_name": body.signatory_name or "", "signatory_designation": body.signatory_designation or ""}
+        await db.certificates.insert_one(doc)
+        created.append({"id": cid, "student_name": s.get("name")})
+    return {"count": len(created), "certificates": created}
 
 
 @api.get("/certificates")
@@ -3327,10 +3365,22 @@ async def certificate_pdf(cid: str, request: Request, user=Depends(require("prin
     y -= 0.6 * cm
     c.setFont("Helvetica", 10.5); c.setFillColor(colors.HexColor("#475569"))
     c.drawCentredString(w / 2, y, f"Certificate No: {cert.get('cert_no')}    |    Issued on: {fmt_date(cert.get('created_at'))}")
+    sig_name = cert.get("signatory_name") or "Principal"
+    sig_desig = cert.get("signatory_designation") or "Authorised Signatory"
+    try:
+        lb = _logo_bytes(inst)
+        if lb:
+            c.saveState(); c.setFillAlpha(0.9)
+            c.drawImage(ImageReader(io.BytesIO(lb)), 3.15 * cm, 3.4 * cm, width=1.5 * cm, height=1.5 * cm, mask='auto', preserveAspectRatio=True)
+            c.restoreState()
+    except Exception:
+        pass
     c.setStrokeColor(colors.HexColor("#94a3b8")); c.setLineWidth(0.8)
     c.line(2.4 * cm, 3.2 * cm, 6.4 * cm, 3.2 * cm)
     c.setFillColor(colors.HexColor("#0F172A")); c.setFont("Helvetica-Bold", 9.5)
-    c.drawCentredString(4.4 * cm, 2.8 * cm, "Principal / Authorised Signatory")
+    c.drawCentredString(4.4 * cm, 2.8 * cm, sig_name)
+    c.setFont("Helvetica", 8); c.setFillColor(colors.HexColor("#64748B"))
+    c.drawCentredString(4.4 * cm, 2.45 * cm, sig_desig)
     try:
         import qrcode
         verify_url = f"{str(request.base_url)}verify-cert/{cert.get('verify_code')}"
@@ -3344,6 +3394,58 @@ async def certificate_pdf(cid: str, request: Request, user=Depends(require("prin
     c.drawCentredString(w / 2, 1.6 * cm, "This certificate is digitally generated and verifiable online via the QR code above.")
     c.showPage(); c.save(); buf.seek(0)
     return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": f"inline; filename=certificate_{cert.get('cert_no')}.pdf"})
+
+
+async def _generate_monthly_fees():
+    month = datetime.now().strftime("%b %Y")
+    due = datetime.now().replace(day=28).strftime("%Y-%m-%d")
+    structs_by_inst = {}
+    for st in await db.fee_structures.find({}, {"_id": 0}).to_list(5000):
+        structs_by_inst.setdefault(st["institute_id"], []).append(st)
+    created = 0
+    for s in await db.students.find({}, {"_id": 0, "id": 1, "name": 1, "parent_phone": 1, "batch_id": 1, "institute_id": 1}).to_list(100000):
+        structs = structs_by_inst.get(s.get("institute_id"))
+        if not structs:
+            continue
+        batch = await db.batches.find_one({"id": s.get("batch_id", "")}, {"_id": 0}) or {}
+        b_norm = _norm_grade(batch.get("grade") or batch.get("class_name") or batch.get("name"))
+        if not b_norm:
+            continue
+        best = None
+        for stx in structs:
+            g = _norm_grade(stx.get("grade"))
+            if not g:
+                continue
+            if b_norm == g or (b_norm.startswith(g) and (len(b_norm) == len(g) or not b_norm[len(g)].isdigit())):
+                if best is None or len(g) > len(_norm_grade(best.get("grade"))):
+                    best = stx
+        if not best:
+            continue
+        comps = best.get("components") or []
+        total = round(sum(float(c.get("amount", 0) or 0) for c in comps), 2)
+        if total <= 0:
+            continue
+        if await db.fees.find_one({"student_id": s["id"], "month": month, "auto_allocated": True}):
+            continue
+        await db.fees.insert_one({"id": str(uuid.uuid4()), "student_id": s["id"], "student_name": s.get("name", ""),
+                                 "parent_phone": s.get("parent_phone", ""), "items": comps, "amount": total,
+                                 "paid_amount": 0, "status": "pending", "month": month, "due_date": due,
+                                 "institute_id": s["institute_id"], "auto_allocated": True, "created_at": now_iso(),
+                                 "payment_id": None, "receipt_no": None})
+        created += 1
+    logger.info(f"monthly fee generation created {created} fees for {month}")
+
+
+@api.post("/cron/generate-monthly-fees")
+async def cron_generate_monthly_fees(request: Request):
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    secret = os.environ.get("WEBHOOK_CRON_SECRET", "")
+    auth = request.headers.get("Authorization", "")
+    token = auth[7:] if auth.startswith("Bearer ") else ""
+    if not secret or not hmac.compare_digest(token, secret):
+        raise HTTPException(401, "Unauthorized")
+    asyncio.create_task(_generate_monthly_fees())
+    return {"status": "accepted"}
 
 
 @api.post("/fees/{fee_id}/email-receipt")

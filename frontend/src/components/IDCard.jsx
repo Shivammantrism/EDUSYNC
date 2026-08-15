@@ -18,7 +18,7 @@ export default function IDCard({ student, institute, variant = "student" }) {
   const rows = (isFaculty
     ? [["Designation", "Teacher"], ["Staff ID", idValue], ["Subjects", (student.subjects || []).join(", ")], ["Phone", student.phone || emergency]]
     : [["Roll No", student.roll_no], ["Class / Sec", cls ? `${cls}${section ? " / " + section : ""}` : ""], ["Father's Name", student.parent_name],
-       ["DOB", student.dob], ["Blood Group", student.blood_group], ["Emergency", emergency]]
+       ["DOB", student.dob], ["Blood Group", student.blood_group], ["Contact Number", emergency]]
   ).filter(([, v]) => v && String(v).trim());
   const address = student.address || inst.address || "";
 
@@ -64,24 +64,20 @@ export default function IDCard({ student, institute, variant = "student" }) {
             <span style={{ fontSize: "2.05mm", color: NAVY, fontWeight: 600, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "32mm" }}>{v}</span>
           </div>
         ))}
-        {address && (
-          <div style={{ padding: "1mm 0 0" }}>
-            <span style={{ fontSize: "1.85mm", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.15mm" }}>Address</span>
-            <p style={{ fontSize: "1.95mm", color: NAVY, fontWeight: 500, margin: "0.3mm 0 0", lineHeight: 1.25 }}>{address}</p>
-          </div>
-        )}
       </div>
 
-      {/* Footer: QR + code */}
+      {/* Footer: QR (left) + Address (right) */}
       <div style={{ position: "absolute", bottom: 0, left: 0, right: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 3mm 1.4mm" }}>
-          <div style={{ background: "#fff", padding: "0.8mm", borderRadius: "1.2mm", border: "0.3mm solid #e2e8f0" }}>
+        <div style={{ display: "flex", alignItems: "flex-end", gap: "2.5mm", padding: "0 3mm 1.4mm" }}>
+          <div style={{ background: "#fff", padding: "0.8mm", borderRadius: "1.2mm", border: "0.3mm solid #e2e8f0", flexShrink: 0 }}>
             <QRCodeSVG value={idValue || "EDUSYNC"} size={38} fgColor={NAVY} />
           </div>
-          <div style={{ textAlign: "right" }}>
-            {inst.code && <p style={{ fontSize: "1.9mm", fontFamily: "monospace", fontWeight: 700, color: GREEN, margin: 0 }}>{inst.code}</p>}
-            <p style={{ fontSize: "1.6mm", color: "#94a3b8", margin: "0.3mm 0 0" }}>{isFaculty ? "Scan to verify" : "Scan for attendance"}</p>
-          </div>
+          {address && (
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <span style={{ fontSize: "1.6mm", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.15mm" }}>Address</span>
+              <p style={{ fontSize: "1.85mm", color: NAVY, fontWeight: 500, margin: "0.3mm 0 0", lineHeight: 1.2, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{address}</p>
+            </div>
+          )}
         </div>
         <div style={{ height: "3.2mm", background: `linear-gradient(90deg, ${NAVY}, ${GREEN})`, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <span style={{ color: "#fff", fontSize: "1.6mm", letterSpacing: "0.3mm" }}>Powered by EduSync — Privam Solutions</span>
