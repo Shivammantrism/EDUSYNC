@@ -129,6 +129,20 @@ rzp_client = razorpay.Client(auth=(RZP_KEY, RZP_SECRET)) if RZP_KEY and RZP_SECR
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("edusync")
 
+# ---- certificate fonts (register once) ----
+CERT_FONT_SCRIPT = "Helvetica-BoldOblique"
+CERT_FONT_SERIF = "Helvetica"
+try:
+    from reportlab.pdfbase import pdfmetrics as _pdfm
+    from reportlab.pdfbase.ttfonts import TTFont as _TTF
+    _fdir = os.path.join(os.path.dirname(__file__), "assets")
+    _pdfm.registerFont(_TTF("GreatVibes", os.path.join(_fdir, "GreatVibes-Regular.ttf")))
+    _pdfm.registerFont(_TTF("EBGaramond", os.path.join(_fdir, "EBGaramond-Regular.ttf")))
+    CERT_FONT_SCRIPT = "GreatVibes"
+    CERT_FONT_SERIF = "EBGaramond"
+except Exception as _e:
+    logger.warning(f"cert font registration failed: {_e}")
+
 app = FastAPI(title="EduSync API")
 api = APIRouter(prefix="/api")
 bearer = HTTPBearer(auto_error=False)
@@ -605,6 +619,7 @@ class CertificateIn(BaseModel):
     remarks: Optional[str] = ""
     signatory_name: Optional[str] = ""
     signatory_designation: Optional[str] = ""
+    design: Optional[str] = "amber"
 
 
 class BulkCertIn(BaseModel):
@@ -614,6 +629,7 @@ class BulkCertIn(BaseModel):
     remarks: Optional[str] = ""
     signatory_name: Optional[str] = ""
     signatory_designation: Optional[str] = ""
+    design: Optional[str] = "amber"
 
 
 class ForgotReq(BaseModel):
@@ -3396,7 +3412,8 @@ async def create_certificate(body: CertificateIn, user=Depends(require("principa
            "session": body.session or "", "remarks": body.remarks or "", "student_name": s.get("name"),
            "parent_name": s.get("parent_name") or "", "roll_no": s.get("roll_no") or "", "student_id_code": s.get("student_id"),
            "class_label": cls_label, "issued_by": user.get("name", ""), "created_at": now_iso(),
-           "signatory_name": body.signatory_name or "", "signatory_designation": body.signatory_designation or ""}
+           "signatory_name": body.signatory_name or "", "signatory_designation": body.signatory_designation or "",
+           "design": body.design or "amber"}
     await db.certificates.insert_one(doc)
     return {k: v for k, v in doc.items() if k != "_id"}
 
@@ -3421,7 +3438,8 @@ async def bulk_certificates(body: BulkCertIn, user=Depends(require("principal"))
                "remarks": body.remarks or "", "student_name": s.get("name"), "parent_name": s.get("parent_name") or "",
                "roll_no": s.get("roll_no") or "", "student_id_code": s.get("student_id"), "class_label": cls_label,
                "issued_by": user.get("name", ""), "created_at": now_iso(),
-               "signatory_name": body.signatory_name or "", "signatory_designation": body.signatory_designation or ""}
+               "signatory_name": body.signatory_name or "", "signatory_designation": body.signatory_designation or "",
+               "design": body.design or "amber"}
         await db.certificates.insert_one(doc)
         created.append({"id": cid, "student_name": s.get("name")})
     return {"count": len(created), "certificates": created}
@@ -3461,79 +3479,86 @@ async def certificate_pdf(cid: str, request: Request, user=Depends(require("prin
     W, H = landscape(A4)
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=landscape(A4))
-    tpl_path = os.path.join(os.path.dirname(__file__), "assets", "cert_template.png")
+    designs = {
+        "amber": {"file": "design_amber.png", "title": "#111827", "accent": "#E08A1E"},
+        "navy": {"file": "design_navy.png", "title": "#0b2a5b", "accent": "#C9A227"},
+        "emerald": {"file": "design_emerald.png", "title": "#0b3d2e", "accent": "#0f766e"},
+    }
+    d = designs.get(cert.get("design") or "amber", designs["amber"])
+    tpl_path = os.path.join(os.path.dirname(__file__), "assets", d["file"])
     try:
         c.drawImage(tpl_path, 0, 0, width=W, height=H)
     except Exception:
-        c.setFillColor(colors.HexColor("#eef4fb")); c.rect(0, 0, W, H, fill=1, stroke=0)
+        c.setFillColor(colors.white); c.rect(0, 0, W, H, fill=1, stroke=0)
+    title_col = colors.HexColor(d["title"]); accent_col = colors.HexColor(d["accent"])
 
-    def mask(x, y, ww, hh):
-        c.saveState(); c.setFillColor(colors.white); c.setFillAlpha(0.95)
-        c.roundRect(x, y, ww, hh, 6, fill=1, stroke=0); c.restoreState()
+    # institute logo — top center
+    try:
+        lb = _logo_bytes(inst)
+        if lb:
+            c.drawImage(ImageReader(io.BytesIO(lb)), W / 2 - 19, H - 84, width=38, height=38, mask='auto', preserveAspectRatio=True)
+    except Exception:
+        pass
 
     label = cert.get("type_label", "Certificate")
     if label.lower().startswith("certificate of "):
         sub = "OF " + label[15:].upper()
     elif label.lower().endswith("certificate"):
-        sub = label[:-11].strip().upper()
+        sub = "OF " + label[:-11].strip().upper()
     else:
         sub = label.upper()
 
-    mask(W / 2 - 250, H - 165, 500, 110)
-    c.setFillColor(colors.HexColor("#0b2a5b")); c.setFont("Helvetica-Bold", 40)
-    c.drawCentredString(W / 2, H - 108, "CERTIFICATE")
-    c.setFillColor(colors.HexColor("#C9A227")); c.setFont("Helvetica-Bold", 17)
-    c.drawCentredString(W / 2, H - 136, sub)
+    c.setFillColor(title_col); c.setFont("Helvetica-Bold", 40)
+    c.drawCentredString(W / 2, H - 146, "CERTIFICATE")
+    c.setFillColor(accent_col); c.setFont("Helvetica-Bold", 15)
+    c.drawCentredString(W / 2, H - 172, sub)
 
-    mask(W / 2 - 200, H - 210, 400, 24)
-    c.setFillColor(colors.HexColor("#475569")); c.setFont("Helvetica-Oblique", 12)
-    c.drawCentredString(W / 2, H - 202, "This certificate is proudly presented to")
+    c.setFillColor(colors.HexColor("#5b6b7f")); c.setFont(CERT_FONT_SERIF, 12)
+    c.drawCentredString(W / 2, H - 208, "This certificate is proudly presented to")
 
-    mask(W / 2 - 260, H - 262, 520, 44)
-    c.setFillColor(colors.HexColor("#0b2a5b")); c.setFont("Helvetica-BoldOblique", 34)
-    c.drawCentredString(W / 2, H - 252, cert.get("student_name", ""))
-    c.setStrokeColor(colors.HexColor("#C9A227")); c.setLineWidth(1.2); c.line(W / 2 - 150, H - 266, W / 2 + 150, H - 266)
+    name = cert.get("student_name", "")
+    c.setFillColor(title_col); c.setFont(CERT_FONT_SCRIPT, 48)
+    c.drawCentredString(W / 2, H - 262, name)
+    c.setStrokeColor(accent_col); c.setLineWidth(1.4); c.line(W / 2 - 180, H - 276, W / 2 + 180, H - 276)
 
-    body = _cert_body(cert["type"], cert.get("student_name", ""), cert.get("parent_name") or "____",
+    body = _cert_body(cert["type"], name, cert.get("parent_name") or "____",
                       cert.get("class_label") or "____", cert.get("roll_no") or "____",
                       cert.get("student_id_code") or "", cert.get("session") or "____", cert.get("remarks") or "")
-    lines = simpleSplit(body, "Helvetica", 12, 560)[:4]
-    mask(W / 2 - 320, 165, 640, (H - 285) - 165)
-    c.setFillColor(colors.HexColor("#334155")); c.setFont("Helvetica", 12)
-    ty = H - 292
+    lines = simpleSplit(body, CERT_FONT_SERIF, 12.5, 600)[:4]
+    c.setFillColor(colors.HexColor("#334155")); c.setFont(CERT_FONT_SERIF, 12.5)
+    ty = H - 308
     for ln in lines:
-        c.drawCentredString(W / 2, ty, ln); ty -= 18
+        c.drawCentredString(W / 2, ty, ln); ty -= 19
 
-    sig_name = cert.get("signatory_name") or "Principal"
-    sig_desig = cert.get("signatory_designation") or "Authorised Signatory"
-    mask(105, 58, 215, 92)
+    # signature — bottom left (seal above the line)
+    sig_name = cert.get("signatory_name") or cert.get("issued_by") or "Principal"
+    sig_desig = cert.get("signatory_designation") or "Principal / Authorised Signatory"
     try:
-        lb = _seal_bytes(inst)
-        if lb:
-            c.saveState(); c.setFillAlpha(0.95)
-            c.drawImage(ImageReader(io.BytesIO(lb)), 188, 96, width=48, height=48, mask='auto', preserveAspectRatio=True)
-            c.restoreState()
+        sb = _seal_bytes(inst)
+        if sb:
+            c.drawImage(ImageReader(io.BytesIO(sb)), 182, 154, width=44, height=44, mask='auto', preserveAspectRatio=True)
     except Exception:
         pass
-    c.setStrokeColor(colors.HexColor("#94a3b8")); c.setLineWidth(0.8); c.line(120, 90, 305, 90)
-    c.setFillColor(colors.HexColor("#0F172A")); c.setFont("Helvetica-Bold", 11); c.drawCentredString(212, 74, sig_name)
-    c.setFillColor(colors.HexColor("#64748B")); c.setFont("Helvetica", 8.5); c.drawCentredString(212, 61, sig_desig)
+    c.setStrokeColor(colors.HexColor("#94a3b8")); c.setLineWidth(0.8); c.line(110, 96, 300, 96)
+    c.setFillColor(title_col); c.setFont("Helvetica-Bold", 11.5); c.drawCentredString(205, 80, sig_name[:34])
+    c.setFillColor(colors.HexColor("#64748B")); c.setFont(CERT_FONT_SERIF, 9.5); c.drawCentredString(205, 66, sig_desig[:42])
 
-    mask(W - 320, 58, 215, 92)
-    c.setStrokeColor(colors.HexColor("#94a3b8")); c.setLineWidth(0.8); c.line(W - 305, 90, W - 120, 90)
-    c.setFillColor(colors.HexColor("#0F172A")); c.setFont("Helvetica-Bold", 11); c.drawCentredString(W - 212, 74, fmt_date(cert.get("created_at")))
-    c.setFillColor(colors.HexColor("#64748B")); c.setFont("Helvetica", 8.5); c.drawCentredString(W - 212, 61, ((inst or {}).get("name", "") or "")[:34])
+    # date & location — bottom right
+    loc = (inst or {}).get("name", "") or ""
+    c.setStrokeColor(colors.HexColor("#94a3b8")); c.setLineWidth(0.8); c.line(W - 300, 150, W - 110, 150)
+    c.setFillColor(title_col); c.setFont("Helvetica-Bold", 11.5); c.drawCentredString(W - 205, 134, fmt_date(cert.get("created_at")))
+    c.setFillColor(colors.HexColor("#64748B")); c.setFont(CERT_FONT_SERIF, 9.5); c.drawCentredString(W - 205, 120, loc[:42])
 
-    c.setFillColor(colors.HexColor("#94a3b8")); c.setFont("Helvetica", 8)
-    c.drawCentredString(W / 2, 34, f"Certificate No: {cert.get('cert_no')}  ·  Verify authenticity online via the QR code")
+    # QR (bottom center) + cert no
     try:
         import qrcode
         verify_url = f"{str(request.base_url)}verify-cert/{cert.get('verify_code')}"
         qb = io.BytesIO(); qrcode.make(verify_url).save(qb, format="PNG"); qb.seek(0)
-        c.saveState(); c.setFillColor(colors.white); c.roundRect(26, H - 98, 64, 64, 5, fill=1, stroke=0); c.restoreState()
-        c.drawImage(ImageReader(qb), 29, H - 95, width=58, height=58, mask='auto')
+        c.drawImage(ImageReader(qb), W / 2 - 24, 66, width=48, height=48, mask='auto')
     except Exception as e:
         logger.warning(f"cert QR failed: {e}")
+    c.setFillColor(colors.HexColor("#94a3b8")); c.setFont(CERT_FONT_SERIF, 8)
+    c.drawCentredString(W / 2, 50, f"Certificate No: {cert.get('cert_no')}  ·  Scan the QR to verify authenticity online")
     c.showPage(); c.save(); buf.seek(0)
     return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": f"inline; filename=certificate_{cert.get('cert_no')}.pdf"})
 

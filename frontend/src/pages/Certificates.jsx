@@ -11,13 +11,14 @@ import { toast } from "sonner";
 import { Award, Download, Link2 } from "lucide-react";
 
 const TYPES = [["achievement", "Achievement"], ["participation", "Participation"], ["sports", "Sports"], ["bonafide", "Bonafide"], ["character", "Character"], ["transfer", "Transfer"]];
+const DESIGNS = [["amber", "Amber Medal", "#E08A1E", "#111827"], ["navy", "Navy Classic", "#C9A227", "#0b2a5b"], ["emerald", "Emerald Modern", "#0f766e", "#0b3d2e"]];
 
 export default function Certificates() {
   const { institute, refreshInstitute } = useAuth();
   const [sealBusy, setSealBusy] = useState(false);
   const [students, setStudents] = useState([]);
   const [certs, setCerts] = useState(null);
-  const [form, setForm] = useState({ student_id: "", type: "bonafide", session: "2025-26", remarks: "", signatory_name: "", signatory_designation: "" });
+  const [form, setForm] = useState({ student_id: "", type: "bonafide", session: "2025-26", remarks: "", signatory_name: "", signatory_designation: "", design: "amber" });
   const [batches, setBatches] = useState([]);
   const [bulkBatch, setBulkBatch] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -52,7 +53,7 @@ export default function Certificates() {
   const doBulk = async () => {
     if (!bulkBatch) return toast.error("Select a class");
     setBulkBusy(true);
-    try { const { data } = await api.post("/certificates/bulk", { batch_id: bulkBatch, type: form.type, session: form.session, remarks: form.remarks, signatory_name: form.signatory_name, signatory_designation: form.signatory_designation }); toast.success(`Issued ${data.count} certificate(s) to the class`); await load(); }
+    try { const { data } = await api.post("/certificates/bulk", { batch_id: bulkBatch, type: form.type, session: form.session, remarks: form.remarks, signatory_name: form.signatory_name, signatory_designation: form.signatory_designation, design: form.design }); toast.success(`Issued ${data.count} certificate(s) to the class`); await load(); }
     catch (e) { toast.error("Could not bulk-issue"); } finally { setBulkBusy(false); }
   };
 
@@ -91,6 +92,22 @@ export default function Certificates() {
           <div><Label>Remarks / Achievement <span className="text-xs text-slate-400">(optional)</span></Label><Input data-testid="cert-remarks" value={form.remarks} onChange={(e) => setForm({ ...form, remarks: e.target.value })} placeholder="e.g. First prize in Science Quiz" /></div>
           <div><Label>Signatory Name <span className="text-xs text-slate-400">(optional)</span></Label><Input data-testid="cert-signatory-name" value={form.signatory_name} onChange={(e) => setForm({ ...form, signatory_name: e.target.value })} placeholder="e.g. Dr. Shivam Mantri" /></div>
           <div><Label>Signatory Designation <span className="text-xs text-slate-400">(optional)</span></Label><Input data-testid="cert-signatory-desig" value={form.signatory_designation} onChange={(e) => setForm({ ...form, signatory_designation: e.target.value })} placeholder="e.g. Principal" /></div>
+        </div>
+        <div className="mt-5">
+          <Label>Certificate Design</Label>
+          <div className="grid grid-cols-3 gap-3 mt-1.5" data-testid="cert-design-picker">
+            {DESIGNS.map(([val, lbl, accent, dark]) => (
+              <button key={val} type="button" data-testid={`cert-design-${val}`} onClick={() => setForm({ ...form, design: val })}
+                className={`rounded-xl border-2 p-3 text-left transition-all ${form.design === val ? "border-slate-800 ring-2 ring-slate-200" : "border-slate-200 hover:border-slate-300"}`}>
+                <div className="h-12 rounded-md mb-2 relative overflow-hidden" style={{ background: "#ffffff", border: "1px solid #e2e8f0" }}>
+                  <span className="absolute top-0 left-0 h-6 w-6" style={{ background: dark, clipPath: "polygon(0 0, 100% 0, 0 100%)" }} />
+                  <span className="absolute top-1 left-1 h-3 w-3 rounded-full" style={{ background: accent }} />
+                  <span className="absolute bottom-0 right-0 h-4 w-10 rounded-tl-xl" style={{ background: accent }} />
+                </div>
+                <p className="text-sm font-semibold text-slate-800 leading-tight">{lbl}</p>
+              </button>
+            ))}
+          </div>
         </div>
         <div className="flex flex-wrap items-end gap-3 mt-4">
           <Button data-testid="cert-generate-btn" onClick={gen} disabled={busy} className="btn-gradient"><Award className="h-4 w-4 mr-2" />{busy ? "Generating…" : "Generate Certificate"}</Button>
