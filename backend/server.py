@@ -384,11 +384,14 @@ async def get_current_user(request: Request, cred: Optional[HTTPAuthorizationCre
     except jwt.InvalidTokenError:
         raise HTTPException(401, "Invalid token")
     role = payload.get("role")
-    coll = db.students if role == "student" else db.users
+    coll = db.students if role in ("student", "parent") else db.users
     user = await coll.find_one({"id": payload["sub"]}, {"_id": 0, "password_hash": 0})
     if not user:
         raise HTTPException(401, "User not found")
     user["role"] = role
+    if role == "parent":
+        user["must_change_password"] = False
+        user["is_parent"] = True
     return user
 
 
@@ -742,6 +745,29 @@ async def login(body: LoginReq):
             "must_change_password": bool(user.get("must_change_password"))}}
 
 
+class ParentLoginReq(BaseModel):
+    student_id: str
+    parent_email: str
+
+
+@api.post("/auth/parent-login")
+async def parent_login(body: ParentLoginReq):
+    sid = body.student_id.strip()
+    email = body.parent_email.strip().lower()
+    candidates = await db.students.find({"student_id": sid}).to_list(20)
+    matches = [c for c in candidates if (c.get("parent_email") or "").strip().lower() == email]
+    if not matches:
+        raise HTTPException(401, "No matching student found for that Student ID and parent email.")
+    active = [c for c in matches if await institute_is_active(c.get("institute_id"))]
+    if not active:
+        raise HTTPException(403, "Your institute is not active yet. Please contact EduSync support.")
+    s = active[0]
+    inst = await db.institutes.find_one({"id": s.get("institute_id")}, {"_id": 0, "name": 1}) or {}
+    ident = f"parent:{sid}"
+    await _issue_login_otp(ident, s["id"], "parent", email, inst.get("name"))
+    return {"otp_required": True, "identifier": ident, "email_hint": _mask_email(email)}
+
+
 @api.post("/auth/verify-otp")
 async def verify_otp(body: OtpVerify):
     ident = body.identifier.strip()
@@ -757,7 +783,7 @@ async def verify_otp(body: OtpVerify):
         raise HTTPException(401, "Invalid code")
     await db.login_otps.update_one({"identifier": ident}, {"$set": {"used": True}})
     role = rec["role"]
-    coll = db.students if role == "student" else db.users
+    coll = db.students if role in ("student", "parent") else db.users
     user = await coll.find_one({"id": rec["user_id"]})
     if not user:
         raise HTTPException(404, "User not found")
@@ -766,7 +792,7 @@ async def verify_otp(body: OtpVerify):
     return {"access_token": token, "user": {"id": user["id"], "name": user["name"], "role": role,
             "institute_id": user.get("institute_id"), "institute_name": inst["name"] if inst else "",
             "student_id": user.get("student_id"), "email": user.get("email"),
-            "must_change_password": bool(user.get("must_change_password"))}}
+            "must_change_password": bool(user.get("must_change_password")) and role != "parent"}}
 
 
 @api.post("/auth/change-password")
@@ -1167,7 +1193,7 @@ async def my_notifications(user=Depends(get_current_user)):
 
 @api.get("/students/{sid}")
 async def get_student(sid: str, user=Depends(get_current_user)):
-    if user["role"] == "student" and user["id"] != sid:
+    if user["role"] in ("student", "parent") and user["id"] != sid:
         raise HTTPException(403, "Forbidden")
     s = await db.students.find_one({"id": sid, "institute_id": user["institute_id"]}, {"_id": 0, "password_hash": 0})
     if not s:
@@ -1383,10 +1409,19 @@ async def _mark_student(user, student, batch_id, status="present"):
 async def scan_attendance(body: AttendanceScan, user=Depends(require("principal", "teacher"))):
     student = await db.students.find_one({"student_id": body.code.strip(), "institute_id": user["institute_id"]}, {"_id": 0, "password_hash": 0})
     if not student:
-        raise HTTPException(404, "Student not found for scanned code")
+        fac = await db.users.find_one({"faculty_id": body.code.strip(), "institute_id": user["institute_id"], "role": "teacher"}, {"_id": 0, "password_hash": 0})
+        if fac:
+            d = today_str()
+            exists = await db.teacher_attendance.find_one({"teacher_id": fac["id"], "date": d})
+            if not exists:
+                await db.teacher_attendance.insert_one({"id": str(uuid.uuid4()), "teacher_id": fac["id"], "teacher_name": fac["name"],
+                                                        "date": d, "status": "present", "institute_id": user["institute_id"], "marked_at": now_iso()})
+            return {"student": {"id": fac["id"], "name": fac["name"], "student_id": fac.get("faculty_id"), "photo_url": fac.get("photo_url")},
+                    "status": "present", "new": not bool(exists), "type": "faculty", "message": f"Attendance marked for {fac['name']}"}
+        raise HTTPException(404, "No student or staff found for scanned code")
     _, created = await _mark_student(user, student, student.get("batch_id"))
     return {"student": {"id": student["id"], "name": student["name"], "student_id": student["student_id"], "photo_url": student.get("photo_url")},
-            "status": "present", "new": created, "message": f"Attendance marked for {student['name']}"}
+            "status": "present", "new": created, "type": "student", "message": f"Attendance marked for {student['name']}"}
 
 
 @api.post("/attendance/mark")
@@ -1486,7 +1521,7 @@ async def decide_leave(lid: str, body: ComplaintUpdate, user=Depends(require("pr
 @api.get("/fees")
 async def list_fees(user=Depends(get_current_user)):
     q = scope(user)
-    if user["role"] == "student":
+    if user["role"] in ("student", "parent"):
         q["student_id"] = user["id"]
     fees = await db.fees.find(q, {"_id": 0}).sort("due_date", -1).to_list(3000)
     return fees
@@ -1729,7 +1764,7 @@ async def get_results(user=Depends(get_current_user), exam_id: Optional[str] = N
 @api.get("/homework")
 async def list_homework(user=Depends(get_current_user)):
     q = scope(user)
-    if user["role"] == "student":
+    if user["role"] in ("student", "parent"):
         s = await db.students.find_one({"id": user["id"]})
         q["batch_id"] = s.get("batch_id", "")
     elif user["role"] == "teacher":
@@ -1742,12 +1777,12 @@ async def list_homework(user=Depends(get_current_user)):
                                                {"$group": {"_id": "$homework_id", "n": {"$sum": 1}}}]):
         counts[row["_id"]] = row["n"]
     my_subs = {}
-    if user["role"] == "student":
+    if user["role"] in ("student", "parent"):
         async for sub in db.submissions.find({"homework_id": {"$in": hw_ids}, "student_id": user["id"]}, {"_id": 0}):
             my_subs[sub["homework_id"]] = sub
     for h in hw:
         h["submission_count"] = counts.get(h["id"], 0)
-        if user["role"] == "student":
+        if user["role"] in ("student", "parent"):
             h["my_submission"] = my_subs.get(h["id"])
     return hw
 
@@ -2061,11 +2096,11 @@ async def list_complaints(user=Depends(get_current_user)):
 
 
 @api.post("/complaints")
-async def create_complaint(body: ComplaintIn, user=Depends(require("teacher", "student"))):
+async def create_complaint(body: ComplaintIn, user=Depends(require("teacher", "student", "parent"))):
     cid = str(uuid.uuid4())
     doc = body.model_dump()
     directed_teacher_id = ""
-    if user["role"] == "student" and body.direction in ("teacher", "both"):
+    if user["role"] in ("student", "parent") and body.direction in ("teacher", "both"):
         s = await db.students.find_one({"id": user["id"]}, {"_id": 0})
         if s and s.get("batch_id"):
             b = await db.batches.find_one({"id": s["batch_id"]}, {"_id": 0})
@@ -2194,7 +2229,7 @@ SLOTS = ["09:00-10:00", "10:00-11:00", "11:15-12:15", "12:15-13:15", "14:00-15:0
 @api.get("/timetable")
 async def get_timetable(user=Depends(get_current_user), batch_id: Optional[str] = None):
     q = scope(user)
-    if user["role"] == "student":
+    if user["role"] in ("student", "parent"):
         s = await db.students.find_one({"id": user["id"]})
         q["batch_id"] = s.get("batch_id", "")
     elif user["role"] == "teacher":
@@ -2288,7 +2323,7 @@ async def generate_timetable(body: Optional[TimetableConfig] = None, user=Depend
 @api.get("/timetable/pdf")
 async def timetable_pdf(user=Depends(get_current_user), batch_id: Optional[str] = None):
     q = scope(user)
-    if user["role"] == "student":
+    if user["role"] in ("student", "parent"):
         s = await db.students.find_one({"id": user["id"]})
         q["batch_id"] = s.get("batch_id", "") if s else ""
     elif user["role"] == "teacher":
@@ -2399,9 +2434,77 @@ async def notify_low_attendance_parents(user=Depends(require("principal"))):
 
 
 # ---------------------------------------------------------------- report card PDF
+def _qr_sticker_pdf(items):
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.lib.utils import ImageReader
+    from reportlab.lib import colors
+    from reportlab.pdfgen import canvas
+    import qrcode
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    W, H = A4
+    cols, rows = 4, 6
+    mx, my = 6 * mm, 10 * mm
+    cw = (W - 2 * mx) / cols
+    ch = (H - 2 * my) / rows
+    qr_sz = 26 * mm
+    per_page = cols * rows
+    for i, it in enumerate(items):
+        pos = i % per_page
+        if i and pos == 0:
+            c.showPage()
+        r = pos // cols
+        col = pos % cols
+        x0 = mx + col * cw
+        y_top = H - my - r * ch
+        c.setStrokeColor(colors.HexColor("#E2E8F0"))
+        c.setLineWidth(0.3)
+        c.rect(x0, y_top - ch, cw, ch, stroke=1, fill=0)
+        qimg = qrcode.make(it["qr"] or "EDUSYNC")
+        bio = io.BytesIO()
+        qimg.save(bio, format="PNG")
+        bio.seek(0)
+        qx = x0 + (cw - qr_sz) / 2
+        qy = y_top - qr_sz - 4 * mm
+        c.drawImage(ImageReader(bio), qx, qy, width=qr_sz, height=qr_sz)
+        c.setFillColor(colors.HexColor("#0F172A"))
+        c.setFont("Helvetica-Bold", 8)
+        c.drawCentredString(x0 + cw / 2, qy - 4 * mm, (it.get("name") or "")[:26])
+        c.setFont("Helvetica", 7)
+        c.setFillColor(colors.HexColor("#475569"))
+        c.drawCentredString(x0 + cw / 2, qy - 7.5 * mm, it.get("sub") or "")
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    return buf.getvalue()
+
+
+@api.get("/print/qr-stickers/students/{batch_id}")
+async def qr_stickers_students(batch_id: str, user=Depends(require("principal", "teacher"))):
+    students = await db.students.find({"batch_id": batch_id, "institute_id": user["institute_id"]}, {"_id": 0}).sort("student_id", 1).to_list(2000)
+    if not students:
+        raise HTTPException(404, "No students in this batch")
+    items = [{"qr": s.get("student_id", ""), "name": s.get("name", ""),
+              "sub": f"Roll: {s.get('roll_no') or s.get('student_id', '-')}"} for s in students]
+    return Response(content=_qr_sticker_pdf(items), media_type="application/pdf",
+                    headers={"Content-Disposition": "attachment; filename=qr-stickers-students.pdf"})
+
+
+@api.get("/print/qr-stickers/faculty")
+async def qr_stickers_faculty(user=Depends(require("principal"))):
+    teachers = await db.users.find({"institute_id": user["institute_id"], "role": "teacher"}, {"_id": 0}).sort("faculty_id", 1).to_list(2000)
+    if not teachers:
+        raise HTTPException(404, "No faculty found")
+    items = [{"qr": t.get("faculty_id", ""), "name": t.get("name", ""),
+              "sub": f"Staff ID: {t.get('faculty_id', '-')}"} for t in teachers]
+    return Response(content=_qr_sticker_pdf(items), media_type="application/pdf",
+                    headers={"Content-Disposition": "attachment; filename=qr-stickers-faculty.pdf"})
+
+
 @api.get("/students/{sid}/report")
 async def report_card(sid: str, user=Depends(get_current_user)):
-    if user["role"] == "student" and user["id"] != sid:
+    if user["role"] in ("student", "parent") and user["id"] != sid:
         raise HTTPException(403, "Forbidden")
     s = await db.students.find_one({"id": sid, "institute_id": user["institute_id"]}, {"_id": 0, "password_hash": 0})
     if not s:
@@ -2624,7 +2727,7 @@ async def student_insights(sid: str, user=Depends(get_current_user)):
     s = await db.students.find_one({"$or": [{"id": sid}, {"student_id": sid}], "institute_id": iid}, {"_id": 0})
     if not s:
         raise HTTPException(404, "Student not found")
-    if user["role"] == "student" and user["id"] != s["id"]:
+    if user["role"] in ("student", "parent") and user["id"] != s["id"]:
         raise HTTPException(403, "Forbidden")
     sidv = s["id"]
     # attendance
@@ -2784,7 +2887,7 @@ async def teacher_dashboard(user=Depends(require("teacher"))):
 
 
 @api.get("/dashboard/student")
-async def student_dashboard(user=Depends(require("student"))):
+async def student_dashboard(user=Depends(require("student", "parent"))):
     sid = user["id"]
     total = await db.attendance.count_documents({"student_id": sid})
     present = await db.attendance.count_documents({"student_id": sid, "status": "present"})
@@ -2796,6 +2899,11 @@ async def student_dashboard(user=Depends(require("student"))):
     s = await db.students.find_one({"id": sid}) or {}
     batch = await db.batches.find_one({"id": s.get("batch_id", "")}, {"_id": 0}) or {}
     homework = await db.homework.count_documents({"batch_id": s.get("batch_id", "")})
+    ct = {}
+    if batch.get("teacher_id"):
+        t = await db.users.find_one({"id": batch["teacher_id"]}, {"_id": 0, "name": 1, "phone": 1})
+        if t:
+            ct = {"name": t.get("name", ""), "phone": t.get("phone", "")}
     today_day = datetime.now().strftime("%A")
     tt = await db.timetable.find({"batch_id": s.get("batch_id", ""), "day": today_day},
                                  {"_id": 0, "slot": 1, "subject": 1, "room": 1, "teacher_name": 1}).to_list(50)
@@ -2812,7 +2920,8 @@ async def student_dashboard(user=Depends(require("student"))):
             "profile": {"name": s.get("name", user["name"]), "student_id": s.get("student_id", user.get("student_id", "")),
                         "class_name": batch.get("class_name") or batch.get("name") or "", "section": batch.get("section", ""),
                         "batch_name": batch.get("name", ""), "roll_no": s.get("roll_no", ""), "photo_url": s.get("photo_url", "")},
-            "today_timetable": tt, "recent_marks": recent_marks, "attendance_calendar": attendance_calendar}
+            "today_timetable": tt, "recent_marks": recent_marks, "attendance_calendar": attendance_calendar,
+            "class_teacher": ct}
 
 
 # ---------------------------------------------------------------- AI

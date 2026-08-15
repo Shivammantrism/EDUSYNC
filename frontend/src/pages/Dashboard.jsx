@@ -7,7 +7,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area,
 } from "recharts";
-import { Users, CalendarCheck, Wallet, UserCheck, MessageSquareWarning, BookOpen, Award, TrendingUp, Phone, GraduationCap, AlertTriangle, Clock, CalendarX, Sparkles, Download, Loader2, Megaphone, IdCard, Receipt, FileText, CalendarDays, CheckCircle2, XCircle, ClipboardList } from "lucide-react";
+import { Users, CalendarCheck, Wallet, UserCheck, MessageSquareWarning, BookOpen, Award, TrendingUp, Phone, GraduationCap, AlertTriangle, Clock, CalendarX, Sparkles, Download, Loader2, Megaphone, IdCard, Receipt, FileText, CalendarDays, CheckCircle2, XCircle, ClipboardList, MessageCircle } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -388,6 +388,10 @@ function StudentDash() {
 
   const p = d.profile || {};
   const classLabel = [p.class_name, p.section && `Sec ${p.section}`].filter(Boolean).join(" · ") || p.batch_name || "—";
+  const ct = d.class_teacher || {};
+  const waDigits = (ct.phone || "").replace(/\D/g, "");
+  const waNum = waDigits.length === 10 ? "91" + waDigits : waDigits;
+  const waUrl = `https://wa.me/${waNum}?text=${encodeURIComponent(`Hello ${ct.name || "Teacher"}, I'm reaching out regarding ${p.name || user.name}. `)}`;
   const pendingHw = (hw || []).filter((h) => !h.my_submission).slice(0, 5);
   const unpaidFees = (fees || []).filter((f) => f.status !== "paid");
   const paidFees = (fees || []).filter((f) => f.status === "paid");
@@ -433,6 +437,22 @@ function StudentDash() {
         <StatCard testid="s-fees" label="Fees Due" value={totalDue} prefix="₹" icon={Wallet} accent="#7c3aed" delay={140} />
         <StatCard testid="s-hw" label="Pending Homework" value={pendingHw.length} sub="to submit" icon={BookOpen} accent="#1e3a8a" delay={210} />
       </div>
+
+      {ct.name && (
+        <div className="card-premium rounded-2xl p-5 sm:p-6 fade-up flex flex-col sm:flex-row sm:items-center gap-4" data-testid="message-teacher-card">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <span className="h-11 w-11 rounded-xl bg-emerald-50 grid place-items-center shrink-0"><MessageCircle className="h-5 w-5 text-emerald-600" /></span>
+            <div className="min-w-0">
+              <p className="font-semibold text-slate-800">Class Teacher · {ct.name}</p>
+              <p className="text-sm text-slate-400">Reach out with any question about {p.name || user.name}</p>
+            </div>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            {ct.phone && <a data-testid="message-teacher-whatsapp" href={waUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-xl bg-[#25D366] text-white text-sm font-semibold px-4 py-2.5 hover:brightness-105 transition-all"><MessageCircle className="h-4 w-4" />WhatsApp</a>}
+            <Button data-testid="message-teacher-app" variant="outline" onClick={() => navigate("/app/complaints")}>Message via app</Button>
+          </div>
+        </div>
+      )}
 
       {/* Academic Overview + Financial Status */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

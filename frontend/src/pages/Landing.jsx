@@ -19,7 +19,9 @@ export default function Landing() {
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState("login"); // login | otp
+  const [mode, setMode] = useState("staff"); // staff | parent
   const [li, setLi] = useState({ identifier: "", password: "" });
+  const [pl, setPl] = useState({ student_id: "", parent_email: "" });
   const [otp, setOtp] = useState("");
   const [hint, setHint] = useState("");
   const [fp, setFp] = useState({ open: false, step: 1, email: "", otp: "", new_password: "", loading: false });
@@ -47,9 +49,20 @@ export default function Landing() {
     } catch (err) { toast.error(formatErr(err.response?.data?.detail)); }
     finally { setLoading(false); }
   };
+  const doParentLogin = async (e) => {
+    e.preventDefault(); setLoading(true);
+    try {
+      const { data } = await api.post("/auth/parent-login", pl);
+      if (data.otp_required) { setLi({ identifier: data.identifier, password: "" }); setHint(data.email_hint || ""); setStep("otp"); toast.success("We emailed you a 6-digit code."); }
+    } catch (err) { toast.error(formatErr(err.response?.data?.detail)); }
+    finally { setLoading(false); }
+  };
   const resend = async () => {
-    try { await api.post("/auth/login", li); toast.success("A new code has been sent."); }
-    catch (err) { toast.error(formatErr(err.response?.data?.detail)); }
+    try {
+      if (li.identifier.startsWith("parent:")) await api.post("/auth/parent-login", pl);
+      else await api.post("/auth/login", li);
+      toast.success("A new code has been sent.");
+    } catch (err) { toast.error(formatErr(err.response?.data?.detail)); }
   };
 
   const sendOtp = async () => {
@@ -81,7 +94,27 @@ export default function Landing() {
           <p className="text-sm text-slate-500 mt-1 text-center">{step === "login" ? "Sign in to your workspace" : `Enter the 6-digit code sent to ${hint}`}</p>
         </div>
 
-        {step === "login" ? (
+        {step === "login" && mode === "parent" ? (
+          <form onSubmit={doParentLogin} className="space-y-4" data-testid="parent-login-form">
+            <div>
+              <Label className="text-slate-700">Student ID</Label>
+              <Input data-testid="parent-student-id" className="mt-1.5 h-11" placeholder="Your child's Student ID (e.g. DP20260001)"
+                value={pl.student_id} onChange={(e) => setPl({ ...pl, student_id: e.target.value })} required />
+            </div>
+            <div>
+              <Label className="text-slate-700">Parent Email</Label>
+              <Input data-testid="parent-email" type="email" className="mt-1.5 h-11" placeholder="Email on file with the school"
+                value={pl.parent_email} onChange={(e) => setPl({ ...pl, parent_email: e.target.value })} required />
+            </div>
+            <Button data-testid="parent-login-submit" disabled={loading}
+              className="group w-full h-12 text-white font-semibold border-0 rounded-xl shadow-[0_14px_32px_-12px_rgba(6,78,59,0.8)] hover:brightness-110 transition-all"
+              style={{ backgroundImage: BTN }}>
+              {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <span className="flex items-center justify-center gap-2">Send code <ArrowRight className="h-[18px] w-[18px] group-hover:translate-x-1 transition-transform" /></span>}
+            </Button>
+            <p className="text-center text-xs text-slate-400">Read-only access to your child's attendance, marks, fees & receipts.</p>
+            <button type="button" data-testid="switch-to-staff" onClick={() => setMode("staff")} className="w-full text-center text-sm font-medium text-blue-700 hover:text-emerald-700 pt-1">← Staff / Student login</button>
+          </form>
+        ) : step === "login" ? (
           <form onSubmit={doLogin} className="space-y-4">
             <div>
               <Label className="text-slate-700">Email or Student ID</Label>
@@ -107,6 +140,7 @@ export default function Landing() {
               style={{ backgroundImage: BTN }}>
               {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <span className="flex items-center justify-center gap-2">Continue <ArrowRight className="h-[18px] w-[18px] group-hover:translate-x-1 transition-transform" /></span>}
             </Button>
+            <button type="button" data-testid="switch-to-parent" onClick={() => setMode("parent")} className="w-full text-center text-sm font-semibold text-blue-700 hover:text-emerald-700">Are you a parent? Sign in here →</button>
             <p className="text-center text-xs text-slate-400 pt-1">Access is by invitation. Accounts are provisioned by your institute administrator.</p>
           </form>
         ) : (

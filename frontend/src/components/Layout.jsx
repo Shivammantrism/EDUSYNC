@@ -178,6 +178,12 @@ const NAV = {
     ["/app/idcard", "Digital ID Card", IdCard, "idcard"],
     ["/app/change-password", "Change Password", KeyRound, "settings"],
   ],
+  parent: [
+    ["/app/dashboard", "Dashboard", LayoutDashboard, "dashboard"],
+    ["/app/fees", "Fees & Receipts", Wallet, "fees"],
+    ["/app/complaints", "Message Teacher", MessageSquareWarning, "complaints"],
+    ["/app/idcard", "Digital ID Card", IdCard, "idcard"],
+  ],
 };
 
 function NavItem({ to, label, Icon, accentKey, onClick }) {
@@ -208,7 +214,7 @@ export default function Layout() {
   const location = useLocation();
   const [open, setOpen] = useState(false);
   const nav = NAV[user?.role] || [];
-  const roleLabel = { principal: "Principal", teacher: "Teacher", student: "Student" }[user?.role];
+  const roleLabel = { principal: "Principal", teacher: "Teacher", student: "Student", parent: "Parent" }[user?.role];
 
   return (
     <div className="min-h-screen flex">
