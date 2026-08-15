@@ -3027,6 +3027,96 @@ async def attendance_absentees(batch_id: str, date_str: str, user=Depends(requir
     return {"date": date_str, "count": len(out), "students": out}
 
 
+class EventIn(BaseModel):
+    title: str
+    date: str
+    time: Optional[str] = ""
+    venue: Optional[str] = ""
+    description: Optional[str] = ""
+    visibility: str = "public"
+    attachment_url: Optional[str] = ""
+    invite_batches: List[str] = []
+    invite_students: List[str] = []
+    invite_staff: List[str] = []
+
+
+class EventAttendanceIn(BaseModel):
+    student_id: str
+    status: str
+
+
+@api.post("/events")
+async def create_event(body: EventIn, user=Depends(require("principal", "teacher"))):
+    iid = user["institute_id"]
+    doc = {"id": str(uuid.uuid4()), "institute_id": iid, "title": body.title, "date": body.date, "time": body.time or "",
+           "venue": body.venue or "", "description": body.description or "", "visibility": body.visibility,
+           "attachment_url": body.attachment_url or "", "invite_batches": body.invite_batches,
+           "invite_students": body.invite_students, "invite_staff": body.invite_staff,
+           "created_by": user["id"], "creator_name": user.get("name", ""), "created_at": now_iso(), "participants": []}
+    await db.events.insert_one(doc)
+    if body.visibility == "public":
+        studs = await db.students.find({"institute_id": iid}, {"_id": 0}).to_list(20000)
+    else:
+        sset = set(body.invite_students)
+        if body.invite_batches:
+            for s in await db.students.find({"institute_id": iid, "batch_id": {"$in": body.invite_batches}}, {"_id": 0, "id": 1}).to_list(20000):
+                sset.add(s["id"])
+        studs = await db.students.find({"institute_id": iid, "id": {"$in": list(sset)}}, {"_id": 0}).to_list(20000) if sset else []
+    when = f"{body.date}{(' ' + body.time) if body.time else ''}"
+    for s in studs:
+        await notify_student(s, iid, "notice", f"New event: {body.title} ({when})")
+    return {k: v for k, v in doc.items() if k != "_id"}
+
+
+@api.get("/events")
+async def list_events(user=Depends(get_current_user)):
+    iid = user["institute_id"]; role = user["role"]
+    docs = await db.events.find({"institute_id": iid}, {"_id": 0}).sort("date", 1).to_list(500)
+    if role in ("student", "parent"):
+        sid = user["id"]
+        stu = await db.students.find_one({"id": sid}, {"_id": 0, "batch_id": 1}) or {}
+        bid = stu.get("batch_id", "")
+        out = []
+        for e in docs:
+            if not (e.get("visibility") == "public" or sid in e.get("invite_students", []) or (bid and bid in e.get("invite_batches", []))):
+                continue
+            e2 = {k: v for k, v in e.items() if k != "participants"}
+            e2["confirmed"] = any(p.get("student_id") == sid for p in e.get("participants", []))
+            e2["participant_count"] = len(e.get("participants", []))
+            out.append(e2)
+        return out
+    for e in docs:
+        e["participant_count"] = len(e.get("participants", []))
+    return docs
+
+
+@api.post("/events/{eid}/confirm")
+async def confirm_event(eid: str, user=Depends(require("student", "parent"))):
+    e = await db.events.find_one({"id": eid, "institute_id": user["institute_id"]})
+    if not e:
+        raise HTTPException(404, "Not found")
+    if any(p.get("student_id") == user["id"] for p in e.get("participants", [])):
+        return {"ok": True}
+    stu = await db.students.find_one({"id": user["id"]}, {"_id": 0, "name": 1}) or {}
+    await db.events.update_one({"id": eid}, {"$push": {"participants": {"student_id": user["id"], "name": stu.get("name", ""), "confirmed_at": now_iso(), "attendance": "confirmed"}}})
+    return {"ok": True}
+
+
+@api.get("/events/{eid}/participants")
+async def event_participants(eid: str, user=Depends(require("principal", "teacher"))):
+    e = await db.events.find_one({"id": eid, "institute_id": user["institute_id"]}, {"_id": 0, "participants": 1})
+    if not e:
+        raise HTTPException(404, "Not found")
+    return {"participants": e.get("participants", [])}
+
+
+@api.post("/events/{eid}/attendance")
+async def event_attendance(eid: str, body: EventAttendanceIn, user=Depends(require("principal", "teacher"))):
+    await db.events.update_one({"id": eid, "institute_id": user["institute_id"], "participants.student_id": body.student_id},
+                               {"$set": {"participants.$.attendance": body.status}})
+    return {"ok": True}
+
+
 @api.get("/students/{sid}/insights")
 async def student_insights(sid: str, user=Depends(get_current_user)):
     iid = user["institute_id"]

@@ -170,6 +170,7 @@ const NAV = {
     ["/app/salary", "Staff Salary", Banknote, "salary"],
     ["/app/leaves", "Leave Requests", PlaneTakeoff, "leaves"],
     ["/app/announcements", "Announcements", Megaphone, "announcements"],
+    ["/app/events", "Events", CalendarDays, "announcements"],
     ["/app/complaints", "Complaints", MessageSquareWarning, "complaints"],
     ["/app/enquiries", "Admission Enquiries", UserPlus, "enquiries"],
     ["/app/gallery", "Photo Gallery", Images, "gallery"],
@@ -187,6 +188,7 @@ const NAV = {
     ["/app/salary", "My Salary", Banknote, "salary"],
     ["/app/leaves", "My Leaves", PlaneTakeoff, "leaves"],
     ["/app/announcements", "Announcements", Megaphone, "announcements"],
+    ["/app/events", "Events", CalendarDays, "announcements"],
     ["/app/complaints", "Complaints", MessageSquareWarning, "complaints"],
     ["/app/gallery", "Photo Gallery", Images, "gallery"],
     ["/app/change-password", "Change Password", KeyRound, "settings"],
@@ -194,6 +196,7 @@ const NAV = {
   student: [
     ["/app/dashboard", "Dashboard", LayoutDashboard, "dashboard"],
     ["/app/notifications", "Notifications", Bell, "announcements"],
+    ["/app/events", "Events", CalendarDays, "announcements"],
     ["/app/attendance", "My Attendance", CalendarCheck, "attendance"],
     ["/app/quizzes", "Online Tests", ListChecks, "quizzes"],
     ["/app/homework", "Homework", BookOpen, "homework"],
@@ -205,6 +208,7 @@ const NAV = {
   parent: [
     ["/app/dashboard", "Dashboard", LayoutDashboard, "dashboard"],
     ["/app/notifications", "Notifications", Bell, "announcements"],
+    ["/app/events", "Events", CalendarDays, "announcements"],
     ["/app/fees", "Fees & Receipts", Wallet, "fees"],
     ["/app/complaints", "Message Teacher", MessageSquareWarning, "complaints"],
     ["/app/idcard", "Digital ID Card", IdCard, "idcard"],

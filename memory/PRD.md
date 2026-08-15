@@ -363,3 +363,11 @@ All use `notify_parent_async` (WhatsApp-first via TWILIO_WHATSAPP_FROM → SMS f
 - All text is navy/dark for contrast; portrait + back sides and per-institute theme colors (id_card_primary/accent) retained.
 - VERIFIED via screenshot (faculty landscape) — layout matches spec; fixed institute-name truncation via header padding/size.
 
+## Logo/Seal Upload + Events Module (2026-08-15, part 38) — DONE
+- **ID logo/seal upload**: "Logo" and "Seal" upload buttons added to both batch ID pages (next to theme colors). They POST to `/upload` and `PUT /institute` (logo_url/seal_url), so the logo appears top-left and the seal watermark bottom-right on the card instantly.
+- **Events module** (full, tested):
+  - Backend: `events` collection + `EventIn`/`EventAttendanceIn`. `POST /events` (principal/teacher; notifies students+parents in-app/PWA via notify_student — all for public, invited-only for private via invite_batches/invite_students). `GET /events` (role-aware: staff see all; students/parents see public + events they're invited to, with `confirmed` + `participant_count`). `POST /events/{id}/confirm` (student). `GET /events/{id}/participants` (staff). `POST /events/{id}/attendance` (staff, marks attended/absent).
+  - Frontend: `pages/Events.jsx` at `/app/events` (nav added for all 4 roles). Staff: Create Event dialog (title/date/time/venue/description, Public/Private visibility, brochure upload, private invite pickers for Classes + Staff + Individual Students) + View Participants dialog with Attended/Absent buttons + live count. Students/parents: event cards with single "Confirm Participation" button.
+  - Choices: creators = principal+teacher; private targets = classes + staff + individual students; single confirm button; notifications in-app+PWA.
+- VERIFIED: full curl flow (create→student sees→confirm→participants→mark attended→notification) + Events page screenshot. Test data cleaned.
+

@@ -16,8 +16,10 @@ export default function FacultyIDCards() {
   const [orientation, setOrientation] = useState("landscape");
   const [side, setSide] = useState("front");
   const [theme, setTheme] = useState({ id_card_primary: institute?.id_card_primary || "#001E4D", id_card_accent: institute?.id_card_accent || "#047857" });
+  const [assets, setAssets] = useState({ logo_url: institute?.logo_url || "", seal_url: institute?.seal_url || "" });
   const saveTheme = async (t) => { setTheme(t); try { await api.put("/institute", t); toast.success("Card colors saved"); } catch { toast.error("Could not save colors"); } };
-  const instThemed = { ...institute, ...theme };
+  const uploadAsset = async (field, file) => { try { const fd = new FormData(); fd.append("file", file); const { data } = await api.post("/upload", fd); const next = { ...assets, [field]: data.url }; setAssets(next); await api.put("/institute", { [field]: data.url }); toast.success(field === "logo_url" ? "Logo saved" : "Seal saved"); } catch { toast.error("Upload failed"); } };
+  const instThemed = { ...institute, ...theme, ...assets };
 
   useEffect(() => { api.get("/teachers").then((r) => setTeachers(r.data)); }, []);
 
@@ -47,6 +49,12 @@ export default function FacultyIDCards() {
             <label className="flex items-center gap-1 text-xs text-slate-500" title="Card theme colors">Theme
               <input data-testid="color-primary-faculty" type="color" value={theme.id_card_primary} onChange={(e) => saveTheme({ ...theme, id_card_primary: e.target.value })} className="h-7 w-8 rounded border cursor-pointer" />
               <input data-testid="color-accent-faculty" type="color" value={theme.id_card_accent} onChange={(e) => saveTheme({ ...theme, id_card_accent: e.target.value })} className="h-7 w-8 rounded border cursor-pointer" />
+            </label>
+            <label data-testid="upload-logo-label-faculty" className="flex items-center gap-1 text-xs px-2 py-1.5 border rounded-lg hover:bg-slate-50 cursor-pointer">Logo
+              <input data-testid="upload-logo-input-faculty" type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files[0] && uploadAsset("logo_url", e.target.files[0])} />
+            </label>
+            <label data-testid="upload-seal-label-faculty" className="flex items-center gap-1 text-xs px-2 py-1.5 border rounded-lg hover:bg-slate-50 cursor-pointer">Seal
+              <input data-testid="upload-seal-input-faculty" type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files[0] && uploadAsset("seal_url", e.target.files[0])} />
             </label>
             <Select value={perPage} onValueChange={setPerPage}>
               <SelectTrigger data-testid="stickers-perpage-faculty" className="h-9 w-[130px]"><SelectValue /></SelectTrigger>
