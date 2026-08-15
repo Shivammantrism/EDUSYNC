@@ -30,6 +30,9 @@ import Terms from "@/pages/Terms";
 import SuperAdmin from "@/pages/SuperAdmin";
 import ChangePassword from "@/pages/ChangePassword";
 import AIAssistant from "@/pages/AIAssistant";
+import Certificates from "@/pages/Certificates";
+import ClassFees from "@/pages/ClassFees";
+import VerifyCertificate from "@/pages/VerifyCertificate";
 import { Loader } from "@/components/common";
 
 function Protected({ children }) {
@@ -66,6 +69,7 @@ function App() {
             <Route path="/" element={<Public><Landing /></Public>} />
             <Route path="/privacy" element={<PrivacyPolicy />} />
             <Route path="/terms" element={<Terms />} />
+            <Route path="/verify-cert/:code" element={<VerifyCertificate />} />
             <Route path="/super-admin" element={<SuperAdminGate><SuperAdmin /></SuperAdminGate>} />
             <Route path="/app" element={<Protected><Layout /></Protected>}>
               <Route index element={<Navigate to="/app/dashboard" replace />} />
@@ -92,6 +96,8 @@ function App() {
               <Route path="gallery" element={<Gallery />} />
               <Route path="change-password" element={<ChangePassword />} />
               <Route path="assistant" element={<AIAssistant />} />
+              <Route path="certificates" element={<Certificates />} />
+              <Route path="class-fees" element={<ClassFees />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

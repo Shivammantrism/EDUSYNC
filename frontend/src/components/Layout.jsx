@@ -141,6 +141,8 @@ const NAV = {
     ["/app/attendance", "Attendance", CalendarCheck, "attendance"],
     ["/app/timetable", "Timetable", CalendarDays, "timetable"],
     ["/app/fees", "Fee Management", Wallet, "fees"],
+    ["/app/class-fees", "Class Fee Setup", Banknote, "fees"],
+    ["/app/certificates", "Certificates", FileText, "exams"],
     ["/app/exams", "Exams & Results", FileText, "exams"],
     ["/app/quizzes", "Online Tests", ListChecks, "quizzes"],
     ["/app/homework", "Homework", BookOpen, "homework"],
