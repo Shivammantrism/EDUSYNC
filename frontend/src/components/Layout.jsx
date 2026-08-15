@@ -11,12 +11,15 @@ import {
   LayoutDashboard, Users, GraduationCap, CalendarCheck, Wallet, FileText,
   BookOpen, Megaphone, MessageSquareWarning, UserPlus, CalendarDays, Banknote,
   LogOut, Menu, X, PlaneTakeoff, IdCard, Settings, ListChecks, Images,
-  Bell, KeyRound, Sparkles, Wallet as WalletIcon, UserX, Megaphone as MegaphoneIcon, UserPlus as UserPlusIcon, PlaneTakeoff as PlaneIcon,
+  Bell, KeyRound, Sparkles, Wallet as WalletIcon, UserX, Megaphone as MegaphoneIcon, UserPlus as UserPlusIcon, PlaneTakeoff as PlaneIcon, TrendingUp,
 } from "lucide-react";
 
 const NOTIF_META = {
   fee: { Icon: WalletIcon, color: "#f59e0b" },
+  fee_paid: { Icon: WalletIcon, color: "#10b981" },
   absent: { Icon: UserX, color: "#ef4444" },
+  attendance: { Icon: CalendarCheck, color: "#10b981" },
+  certificate: { Icon: FileText, color: "#8b5cf6" },
   notice: { Icon: MegaphoneIcon, color: "#3b82f6" },
   complaint: { Icon: MessageSquareWarning, color: "#ef4444" },
   lead: { Icon: UserPlusIcon, color: "#10b981" },
@@ -55,6 +58,15 @@ function NotificationBell() {
     const p = await ensureNotificationPermission();
     setPerm(p);
   };
+
+  const markRead = async () => {
+    try { await api.post("/notifications/mark-read"); load(); } catch { /* ignore */ }
+  };
+
+  useEffect(() => {
+    if (open && data.count > 0) markRead();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   useEffect(() => {
     load();
@@ -134,6 +146,7 @@ function NotificationBell() {
 const NAV = {
   principal: [
     ["/app/dashboard", "Dashboard", LayoutDashboard, "dashboard"],
+    ["/app/analytics", "Analytics", TrendingUp, "dashboard"],
     ["/app/students", "Students", Users, "students"],
     ["/app/batches", "Classes & Sections", GraduationCap, "batches"],
     ["/app/teachers", "Teachers & Staff", Users, "teachers"],

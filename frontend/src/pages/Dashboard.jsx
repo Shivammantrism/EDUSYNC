@@ -175,6 +175,7 @@ function ChartCard({ title, children, className = "" }) {
 
 function PrincipalDash() {
   const { institute } = useAuth();
+  const navigate = useNavigate();
   const [d, setD] = useState(null);
   useEffect(() => { api.get("/dashboard/principal").then((r) => setD(r.data)); }, []);
   if (!d) return <Loader />;
@@ -183,6 +184,7 @@ function PrincipalDash() {
     <div>
       <PageHeader title="Principal Dashboard" subtitle="Live overview of your institute" actions={
         <div className="flex items-center gap-2">
+          <Button data-testid="open-analytics-btn" size="sm" className="bg-gradient-to-r from-blue-600 to-violet-600 text-white hover:opacity-90" onClick={() => navigate("/app/analytics")}><TrendingUp className="h-4 w-4 mr-1" />Analytics</Button>
           <Button data-testid="export-students-btn" size="sm" variant="outline" onClick={() => downloadCsv("/export/students.csv", "students.csv")}><Download className="h-4 w-4 mr-1" />Students</Button>
           <Button data-testid="export-teachers-btn" size="sm" variant="outline" onClick={() => downloadCsv("/export/teachers.csv", "teachers.csv")}><Download className="h-4 w-4 mr-1" />Teachers</Button>
           {institute?.code && (

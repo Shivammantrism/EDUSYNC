@@ -302,6 +302,27 @@ async def notify_parent_async(phone, body):
     return await asyncio.to_thread(notify_parent, phone, body)
 
 
+async def add_notification(institute_id, recipient_id, ntype, title, body=""):
+    if not recipient_id:
+        return
+    await db.notifications.insert_one({"id": str(uuid.uuid4()), "institute_id": institute_id,
+                                       "recipient_id": recipient_id, "type": ntype, "title": title,
+                                       "body": body or title, "read": False, "created_at": now_iso()})
+
+
+async def notify_student(student, institute_id, ntype, title, wa_msg=None, email_subject=None, email_html=None):
+    """Persist an in-app notification for the student/parent, then try WhatsApp/SMS + email (all graceful)."""
+    if not student:
+        return
+    await add_notification(institute_id, student.get("id"), ntype, title)
+    phone = student.get("parent_phone") or student.get("phone")
+    if phone and wa_msg:
+        asyncio.create_task(notify_parent_async(phone, wa_msg))
+    to = student.get("parent_email") or student.get("email")
+    if to and email_subject and email_html:
+        asyncio.create_task(send_email(to, email_subject, email_html))
+
+
 def _seal_bytes(inst):
     try:
         if inst and inst.get("seal_path"):
@@ -1254,14 +1275,15 @@ async def export_teachers_csv(user=Depends(require("principal"))):
 @api.get("/notifications")
 async def my_notifications(user=Depends(get_current_user)):
     iid = user["institute_id"]; role = user["role"]; items = []
-    if role == "student":
-        n = await db.fees.count_documents({"student_id": user["id"], "status": {"$ne": "paid"}})
-        if n:
-            items.append({"type": "fee", "title": f"You have {n} pending fee payment(s)"})
-        if await db.attendance.find_one({"student_id": user["id"], "date": today_str(), "status": "absent"}):
-            items.append({"type": "absent", "title": "You were marked absent today"})
-        for an in await db.announcements.find({"institute_id": iid, "audience": {"$in": ["all", "students"]}}).sort("created_at", -1).to_list(3):
-            items.append({"type": "notice", "title": an.get("title", "")})
+    if role in ("student", "parent"):
+        docs = await db.notifications.find({"recipient_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(20)
+        for n in docs:
+            items.append({"type": n.get("type", "notice"), "title": n.get("title", ""),
+                          "created_at": n.get("created_at"), "read": bool(n.get("read"))})
+        unread = sum(1 for n in docs if not n.get("read"))
+        for an in await db.announcements.find({"institute_id": iid, "audience": {"$in": ["all", "students", "parents"]}}).sort("created_at", -1).to_list(3):
+            items.append({"type": "notice", "title": an.get("title", ""), "read": True})
+        return {"count": unread, "items": items}
     elif role == "teacher":
         leads = await db.enquiries.count_documents({"institute_id": iid, "assigned_to": user["id"], "status": {"$ne": "closed"}})
         if leads:
@@ -1279,6 +1301,12 @@ async def my_notifications(user=Depends(get_current_user)):
         if pend:
             items.append({"type": "leave", "title": f"{pend} leave request(s) pending"})
     return {"count": len(items), "items": items}
+
+
+@api.post("/notifications/mark-read")
+async def mark_notifications_read(user=Depends(get_current_user)):
+    await db.notifications.update_many({"recipient_id": user["id"], "read": False}, {"$set": {"read": True}})
+    return {"ok": True}
 
 
 @api.get("/students/{sid}")
@@ -1465,33 +1493,37 @@ async def _mark_student(user, student, batch_id, status="present"):
     d = today_str()
     existing = await db.attendance.find_one({"student_id": student["id"], "date": d})
 
-    async def _maybe_notify(att_id, already):
-        if status == "absent" and not already:
-            inst = await db.institutes.find_one({"id": user["institute_id"]}) or {}
-            phone = student.get("parent_phone") or student.get("phone")
-            to = student.get("parent_email") or student.get("email")
-            if phone:
-                msg = f"Dear Parent, Your ward {student['name']} was marked absent today at {inst.get('name', 'our institute')}. - EduSync"
-                asyncio.create_task(notify_parent_async(phone, msg))
-            if to:
-                body_html = (f"<p style='color:#475569;font-size:14px;line-height:1.6'>Dear Parent, this is to inform you that "
-                             f"<b>{student['name']}</b> was marked <b style='color:#dc2626'>absent</b> today ({d}) at "
-                             f"{inst.get('name', 'our institute')}. If this is unexpected, please contact the school office.</p>")
-                asyncio.create_task(send_email(to, f"Attendance Alert — {student['name']} marked absent",
-                                               _brand_email_html(inst, "Absence Notification", body_html)))
-            if phone or to:
-                await db.attendance.update_one({"id": att_id}, {"$set": {"parent_notified": True}})
+    async def _maybe_notify(att_id, prev_status):
+        if status == prev_status or status not in ("present", "absent"):
+            return
+        inst = await db.institutes.find_one({"id": user["institute_id"]}) or {}
+        iname = inst.get("name", "our institute")
+        if status == "absent":
+            title = f"{student['name']} was marked absent today ({d})"
+            wa = f"Dear Parent, your ward {student['name']} was marked ABSENT today at {iname}. - EduSync"
+            body_html = (f"<p style='color:#475569;font-size:14px;line-height:1.6'>Dear Parent, this is to inform you that "
+                         f"<b>{student['name']}</b> was marked <b style='color:#dc2626'>absent</b> today ({d}) at "
+                         f"{iname}. If this is unexpected, please contact the school office.</p>")
+            await notify_student(student, user["institute_id"], "attendance", title, wa,
+                                 f"Attendance Alert — {student['name']} marked absent",
+                                 _brand_email_html(inst, "Absence Notification", body_html))
+        else:
+            title = f"{student['name']} was marked present today ({d})"
+            wa = f"Dear Parent, your ward {student['name']} was marked present today at {iname}. - EduSync"
+            await notify_student(student, user["institute_id"], "attendance", title, wa)
+        await db.attendance.update_one({"id": att_id}, {"$set": {"parent_notified": True}})
 
     if existing:
+        prev = existing.get("status")
         await db.attendance.update_one({"id": existing["id"]}, {"$set": {"status": status, "marked_at": now_iso()}})
-        await _maybe_notify(existing["id"], existing.get("parent_notified", False))
+        await _maybe_notify(existing["id"], prev)
         return existing["id"], False
     aid = str(uuid.uuid4())
     await db.attendance.insert_one({"id": aid, "student_id": student["id"], "student_name": student["name"],
                                     "batch_id": batch_id or student.get("batch_id", ""), "date": d, "status": status,
                                     "institute_id": user["institute_id"], "marked_at": now_iso(), "marked_by": user["id"],
                                     "parent_notified": False})
-    await _maybe_notify(aid, False)
+    await _maybe_notify(aid, None)
     return aid, True
 
 
@@ -1630,6 +1662,12 @@ async def create_fee(body: FeeIn, user=Depends(require("principal"))):
                              "status": "pending", "paid_amount": 0, "student_name": s["name"] if s else "",
                              "parent_phone": s.get("parent_phone", "") if s else "", "created_at": now_iso(),
                              "payment_id": None, "receipt_no": None})
+    inst = await db.institutes.find_one({"id": user["institute_id"]}, {"_id": 0, "name": 1}) or {}
+    iname = inst.get("name", "our institute")
+    _html = _brand_email_html(inst, "New Fee Generated", f"<p style='color:#475569;font-size:14px;line-height:1.6'>Dear Parent, a new fee of <b>Rs. {int(amount)}</b> for <b>{s['name']}</b> ({body.month}) has been generated. Due date: <b>{fmt_date(body.due_date)}</b>. You can pay securely from the EduSync portal.</p>")
+    await notify_student(s, user["institute_id"], "fee", f"New fee of ₹{int(amount)} generated ({body.month})",
+                         f"Dear Parent, a new fee of Rs.{int(amount)} for {s['name']} ({body.month}) has been generated at {iname}. Due: {fmt_date(body.due_date)}. - EduSync",
+                         f"New Fee — {body.month} ({s['name']})", _html)
     return await db.fees.find_one({"id": fid}, {"_id": 0})
 
 
@@ -1692,6 +1730,10 @@ async def rzp_verify(payload: dict, user=Depends(get_current_user)):
     await db.fees.update_one({"id": fee_id}, {"$set": {"status": "paid", "paid_amount": fee["amount"],
                              "payment_id": payload["razorpay_payment_id"], "receipt_no": receipt_no, "paid_at": now_iso()}})
     asyncio.create_task(_auto_email_receipt(fee_id, fee["institute_id"]))
+    _stu = await db.students.find_one({"id": fee["student_id"]}, {"_id": 0}) or {}
+    _inst = await db.institutes.find_one({"id": fee["institute_id"]}, {"_id": 0, "name": 1}) or {}
+    await notify_student(_stu, fee["institute_id"], "fee_paid", f"Payment received ₹{int(fee['amount'])} ({fee.get('month')})",
+                         f"Dear Parent, online payment of Rs.{int(fee['amount'])} for {_stu.get('name', 'your ward')} ({fee.get('month')}) received. Receipt {receipt_no}. Thank you. - {_inst.get('name', 'EduSync')}")
     return {"ok": True, "receipt_no": receipt_no}
 
 
@@ -1704,6 +1746,10 @@ async def mark_fee_paid(fee_id: str, user=Depends(require("principal"))):
     await db.fees.update_one({"id": fee_id}, {"$set": {"status": "paid", "paid_amount": fee["amount"],
                              "receipt_no": receipt_no, "paid_at": now_iso(), "payment_id": "CASH"}})
     asyncio.create_task(_auto_email_receipt(fee_id, user["institute_id"]))
+    _stu = await db.students.find_one({"id": fee["student_id"]}, {"_id": 0}) or {}
+    _inst = await db.institutes.find_one({"id": user["institute_id"]}, {"_id": 0, "name": 1}) or {}
+    await notify_student(_stu, user["institute_id"], "fee_paid", f"Payment received ₹{int(fee['amount'])} ({fee.get('month')})",
+                         f"Dear Parent, payment of Rs.{int(fee['amount'])} for {_stu.get('name', 'your ward')} ({fee.get('month')}) received. Receipt {receipt_no}. Thank you. - {_inst.get('name', 'EduSync')}")
     return {"ok": True, "receipt_no": receipt_no}
 
 
@@ -2867,6 +2913,76 @@ async def principal_dashboard(user=Depends(require("principal"))):
             "recent_students": recent_students, "recent_complaints": recent_complaints}
 
 
+@api.get("/dashboard/analytics")
+async def analytics_dashboard(user=Depends(require("principal"))):
+    iid = user["institute_id"]
+    batches = await db.batches.find({"institute_id": iid}, {"_id": 0, "id": 1, "name": 1, "class_name": 1}).to_list(500)
+    bname = {b["id"]: (b.get("name") or b.get("class_name") or "Class") for b in batches}
+    students = await db.students.find({"institute_id": iid}, {"_id": 0, "id": 1, "batch_id": 1}).to_list(20000)
+    sbatch = {s["id"]: s.get("batch_id", "") for s in students}
+
+    # fee trend — last 6 months: billed vs collected
+    fee_trend = []
+    tot_billed = tot_collected = 0.0
+    for i in range(5, -1, -1):
+        m = (datetime.now() - timedelta(days=30 * i)).strftime("%Y-%m")
+        recs = await db.fees.find({"institute_id": iid, "month": m}, {"_id": 0, "amount": 1, "paid_amount": 1}).to_list(20000)
+        billed = sum(float(r.get("amount", 0) or 0) for r in recs)
+        collected = sum(float(r.get("paid_amount", 0) or 0) for r in recs)
+        tot_billed += billed; tot_collected += collected
+        fee_trend.append({"month": m[5:7] + "/" + m[2:4], "billed": round(billed, 2), "collected": round(collected, 2),
+                          "outstanding": round(max(billed - collected, 0), 2),
+                          "rate": round(collected / billed * 100, 1) if billed else 0})
+    collection_rate = round(tot_collected / tot_billed * 100, 1) if tot_billed else 0
+
+    # attendance heatmap — class x last 7 days present%
+    days = [(date.today() - timedelta(days=i)).isoformat() for i in range(6, -1, -1)]
+    att = await db.attendance.find({"institute_id": iid, "date": {"$in": days}}, {"_id": 0, "batch_id": 1, "date": 1, "status": 1}).to_list(200000)
+    grid = {}
+    for a in att:
+        k = (a.get("batch_id", ""), a.get("date"))
+        pt = grid.get(k, [0, 0]); pt[0] += 1 if a.get("status") == "present" else 0; pt[1] += 1; grid[k] = pt
+    heat_rows = []
+    for b in batches:
+        row = {"class": bname[b["id"]], "cells": []}
+        for dday in days:
+            p, t = grid.get((b["id"], dday), [0, 0])
+            row["cells"].append(round(p / t * 100) if t else None)
+        heat_rows.append(row)
+
+    # class-wise performance — avg exam %
+    results = await db.results.find({"institute_id": iid}, {"_id": 0, "student_id": 1, "percentage": 1}).to_list(200000)
+    perf_sum, perf_cnt = {}, {}
+    for r in results:
+        b = sbatch.get(r["student_id"], "")
+        perf_sum[b] = perf_sum.get(b, 0) + r["percentage"]; perf_cnt[b] = perf_cnt.get(b, 0) + 1
+    class_perf = [{"class": bname[b], "avg": round(perf_sum[b] / perf_cnt[b], 1), "count": perf_cnt[b]}
+                  for b in perf_cnt if b in bname]
+    class_perf.sort(key=lambda x: x["avg"], reverse=True)
+
+    # defaulters per class
+    pend = await db.fees.find({"institute_id": iid, "status": {"$ne": "paid"}}, {"_id": 0, "student_id": 1, "amount": 1, "paid_amount": 1}).to_list(200000)
+    def_map = {}
+    for f in pend:
+        due = float(f.get("amount", 0) or 0) - float(f.get("paid_amount", 0) or 0)
+        if due <= 0:
+            continue
+        b = sbatch.get(f["student_id"], "")
+        info = def_map.setdefault(b, {"students": set(), "amount": 0.0})
+        info["students"].add(f["student_id"]); info["amount"] += due
+    defaulters = [{"class": bname[b], "count": len(v["students"]), "amount": round(v["amount"], 2)}
+                  for b, v in def_map.items() if b in bname]
+    defaulters.sort(key=lambda x: x["amount"], reverse=True)
+    total_due = round(sum(d["amount"] for d in defaulters), 2)
+    total_defaulters = sum(d["count"] for d in defaulters)
+
+    return {"fee_trend": fee_trend, "collection_rate": collection_rate,
+            "total_billed": round(tot_billed, 2), "total_collected": round(tot_collected, 2),
+            "heatmap": {"days": [d[5:] for d in days], "rows": heat_rows},
+            "class_performance": class_perf, "defaulters": defaulters,
+            "total_due": total_due, "total_defaulters": total_defaulters}
+
+
 @api.get("/students/{sid}/insights")
 async def student_insights(sid: str, user=Depends(get_current_user)):
     iid = user["institute_id"]
@@ -3292,6 +3408,11 @@ async def pay_partial(fee_id: str, body: PartialPay, user=Depends(require("princ
     receipt_no = "RCPT-" + datetime.now().strftime("%y%m%d") + "-" + uuid.uuid4().hex[:6].upper()
     await db.fees.update_one({"id": fee_id}, {"$set": {"paid_amount": new_paid, "status": status,
                              "receipt_no": receipt_no, "payment_id": "CASH", "paid_at": now_iso()}})
+    if status == "paid":
+        _stu = await db.students.find_one({"id": fee["student_id"]}, {"_id": 0}) or {}
+        _inst = await db.institutes.find_one({"id": user["institute_id"]}, {"_id": 0, "name": 1}) or {}
+        await notify_student(_stu, user["institute_id"], "fee_paid", f"Payment received ₹{int(fee['amount'])} ({fee.get('month')})",
+                             f"Dear Parent, payment for {_stu.get('name', 'your ward')} ({fee.get('month')}) is now complete. Receipt {receipt_no}. Thank you. - {_inst.get('name', 'EduSync')}")
     return {"ok": True, "receipt_no": receipt_no, "remaining": round(float(fee["amount"]) - new_paid, 2), "status": status}
 
 
@@ -3415,6 +3536,12 @@ async def create_certificate(body: CertificateIn, user=Depends(require("principa
            "signatory_name": body.signatory_name or "", "signatory_designation": body.signatory_designation or "",
            "design": body.design or "amber"}
     await db.certificates.insert_one(doc)
+    _inst = await db.institutes.find_one({"id": user["institute_id"]}, {"_id": 0, "name": 1}) or {}
+    _lbl = CERT_TYPES[body.type]
+    _html = _brand_email_html(_inst, "Certificate Issued", f"<p style='color:#475569;font-size:14px;line-height:1.6'>Dear Parent, we're pleased to inform you that a <b>{_lbl}</b> (No. {cert_no}) has been issued to <b>{s['name']}</b>. Please contact the office to collect it.</p>")
+    await notify_student(s, user["institute_id"], "certificate", f"{_lbl} issued to {s['name']}",
+                         f"Dear Parent, a {_lbl} ({cert_no}) has been issued to {s['name']} at {_inst.get('name', 'EduSync')}. - EduSync",
+                         f"Certificate Issued — {s['name']}", _html)
     return {k: v for k, v in doc.items() if k != "_id"}
 
 
@@ -3441,6 +3568,8 @@ async def bulk_certificates(body: BulkCertIn, user=Depends(require("principal"))
                "signatory_name": body.signatory_name or "", "signatory_designation": body.signatory_designation or "",
                "design": body.design or "amber"}
         await db.certificates.insert_one(doc)
+        await notify_student(s, user["institute_id"], "certificate", f"{CERT_TYPES[body.type]} issued to {s.get('name')}",
+                             f"Dear Parent, a {CERT_TYPES[body.type]} ({cert_no}) has been issued to {s.get('name')}. - EduSync")
         created.append({"id": cid, "student_name": s.get("name")})
     return {"count": len(created), "certificates": created}
 
@@ -3599,6 +3728,8 @@ async def _generate_monthly_fees():
                                  "paid_amount": 0, "status": "pending", "month": month, "due_date": due,
                                  "institute_id": s["institute_id"], "auto_allocated": True, "created_at": now_iso(),
                                  "payment_id": None, "receipt_no": None})
+        await notify_student(s, s["institute_id"], "fee", f"New monthly fee of ₹{int(total)} generated ({month})",
+                             f"Dear Parent, a new monthly fee of Rs.{int(total)} for {s.get('name')} ({month}) has been generated. Due: {fmt_date(due)}. - EduSync")
         created += 1
     logger.info(f"monthly fee generation created {created} fees for {month}")
 
