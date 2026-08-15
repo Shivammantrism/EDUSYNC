@@ -278,3 +278,7 @@ All use `notify_parent_async` (WhatsApp-first via TWILIO_WHATSAPP_FROM → SMS f
 ## Roll No Duplicate Check on Admission (2026-06, forked session, part 24) — DONE
 - Students.jsx: `rollDup` computed from the loaded institute-wide students list — true when another student (id !== editId) in the SAME batch has the same roll_no (case/space-insensitive). Inline amber warning "⚠ Roll No already used in this class" (data-testid err-roll-dup) under the Roll No field; Save button disabled while rollDup; save() also hard-blocks with a toast naming the roll number. Edit mode excludes the record itself.
 - VERIFIED via screenshot: Class 9-A + Roll 12 (existing Saanvi Singh) → warning shown + Save disabled; changing to a unique roll clears it.
+
+## Auto Roll Suggest (2026-06, forked session, part 25) — DONE
+- Students.jsx: on selecting a Class & Section in the admission form, Roll No auto-fills with the next available number (max numeric roll in that batch + 1, else 1). Only for NEW admissions and only when Roll No is empty (never overwrites a manually typed roll or an existing student's roll in edit). Helper nextRoll(batchId).
+- VERIFIED via screenshot: choosing Class 9-A (rolls up to 12) auto-filled Roll No 13; live ID preview updated accordingly.

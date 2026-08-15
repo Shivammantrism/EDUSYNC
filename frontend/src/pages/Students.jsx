@@ -33,6 +33,10 @@ export default function Students() {
   const [form, setForm] = useState(blank);
   const phoneOk = (v) => !v || /^[+]?\d{10,15}$/.test(String(v).replace(/[\s-]/g, ""));
   const emailOk = (v) => !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+  const nextRoll = (batchId) => {
+    const nums = (students || []).filter((s) => s.batch_id === batchId).map((s) => parseInt(String(s.roll_no || "").replace(/\D/g, ""), 10)).filter((n) => !isNaN(n));
+    return String(nums.length ? Math.max(...nums) + 1 : 1);
+  };
 
   const load = () => api.get("/students").then((r) => setStudents(r.data));
   useEffect(() => { load(); api.get("/batches").then((r) => setBatches(r.data)); }, []);
@@ -119,7 +123,7 @@ export default function Students() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div><Label>Class &amp; Section <span className="text-red-500">*</span></Label>
-                    <Select value={form.batch_id} onValueChange={(v) => setForm({ ...form, batch_id: v })}>
+                    <Select value={form.batch_id} onValueChange={(v) => setForm((f) => ({ ...f, batch_id: v, roll_no: (!editId && !String(f.roll_no).trim()) ? nextRoll(v) : f.roll_no }))}>
                       <SelectTrigger data-testid="student-batch"><SelectValue placeholder="Select class" /></SelectTrigger>
                       <SelectContent>{batches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}{b.class_name ? ` · ${b.class_name}${b.section ? "-" + b.section : ""}` : ""}</SelectItem>)}</SelectContent>
                     </Select>
