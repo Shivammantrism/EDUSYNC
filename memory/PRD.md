@@ -6,6 +6,9 @@ Last updated: 2026-08-10
 ## Changelog — 2026-08-15
 - ID Card (IDCard.jsx landscape front) redesigned per user: premium tinted-gradient background + faint watermark initial + soft accent glows, removed the "OFFICIAL SEAL" element, moved student data & photo frame higher (top-aligned body), bold name, lighter (non-bold) detail values.
 - Events (Events.jsx): added "Select all / Clear all" staff button in the private-visibility invite picker; completed the Calendar (month-grid) view so the list/calendar toggle is functional (today highlighted, prev/next month nav, events shown as colored chips per day); Create dialog now shows Edit title + "Save Changes" when editing.
+- ID Card v2 (IDCard.jsx landscape): premium branded navy header band (logo tile + school name + gold heading), QR in white tile; removed the tagline ("Innovation That Matters") line and the gold vertical divider; footer restructured so the school address prints on its own line and fully fits (phone/email/website below); added a **Student Address** field to both student & faculty cards (wraps to 2 lines). Verified for faculty + student cards.
+- Fee Receipts (server.py `fee_receipt`): now stamp the institute's uploaded official seal (falls back to logo) at bottom-center with an "Authorised Signatory / Official Seal" caption.
+- Defaulter Report (server.py `defaulters_report` + Fees.jsx): principal can now filter by class/section and minimum amount due via a dialog; PDF title reflects the applied filters; returns 404 with a friendly message when nothing matches. Backend verified via curl (200 filtered, 404 no-match).
 
 
 ## Original Problem Statement

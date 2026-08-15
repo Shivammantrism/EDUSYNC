@@ -20,15 +20,16 @@ export default function IDCard({ student, institute, variant = "student", orient
   const section = student.section || "";
   const contact = student.emergency_contact || student.parent_phone || student.phone || "";
   const email = student.email || student.parent_email || "";
-  const address = student.address || inst.address || "";
+  const schoolAddress = inst.address || "";
+  const studentAddress = student.address || "";
   const logo = inst.logo_url ? fileUrl(inst.logo_url) : null;
   const seal = inst.seal_url ? fileUrl(inst.seal_url) : null;
   const website = inst.website || "";
   const tint = (hex, a) => { const h = (hex || "#000").replace("#", ""); const f = h.length === 3 ? h.split("").map((c) => c + c).join("") : h; const n = parseInt(f, 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; };
 
   const fields = isFaculty
-    ? [["Name", student.name], ["Staff ID", idValue], ["Designation", student.designation || "Teacher"], ["DOB", student.dob], ["Subjects", (student.subjects || []).join(", ")], ["Blood Group", student.blood_group], ["Mobile", contact], ["Email", email]]
-    : [["Name", student.name], ["Roll No", student.roll_no], ["Class / Sec", cls ? `${cls}${section ? " - " + section : ""}` : section], ["DOB", student.dob], ["Father's Name", student.parent_name], ["Blood Group", student.blood_group], ["Mobile", contact], ["Email", email]];
+    ? [["Name", student.name], ["Staff ID", idValue], ["Designation", student.designation || "Teacher"], ["DOB", student.dob], ["Subjects", (student.subjects || []).join(", ")], ["Blood Group", student.blood_group], ["Mobile", contact], ["Email", email], ["Address", studentAddress]]
+    : [["Name", student.name], ["Roll No", student.roll_no], ["Class / Sec", cls ? `${cls}${section ? " - " + section : ""}` : section], ["DOB", student.dob], ["Father's Name", student.parent_name], ["Blood Group", student.blood_group], ["Mobile", contact], ["Email", email], ["Address", studentAddress]];
 
   const W = isLandscape ? "85.6mm" : "54mm";
   const H = isLandscape ? "54mm" : "85.6mm";
@@ -80,37 +81,41 @@ export default function IDCard({ student, institute, variant = "student", orient
         <div style={{ position: "absolute", bottom: "9mm", left: "-6mm", width: "22mm", height: "22mm", borderRadius: "50%", background: tint(P, 0.06), pointerEvents: "none" }} />
         {/* faint watermark initial */}
         <div style={{ position: "absolute", right: "3mm", bottom: "10.5mm", fontSize: "22mm", fontWeight: 900, color: tint(P, 0.05), lineHeight: 1, pointerEvents: "none", userSelect: "none" }}>{(instName || "E")[0]}</div>
-        {/* Header */}
-        <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "1.8mm 3mm 1.2mm", borderBottom: `0.5mm solid ${GOLD}` }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "1.4mm", width: "26%" }}>
-            {logo && <img src={logo} alt="" style={{ height: "8mm", width: "8mm", objectFit: "contain" }} />}
-            <span style={{ fontSize: "1.5mm", color: A, fontWeight: 700, lineHeight: 1.1 }}>{tagline}</span>
+        {/* Premium branded header band */}
+        <div style={{ display: "flex", alignItems: "center", gap: "2.4mm", padding: "1.8mm 3mm", background: P, borderBottom: `0.6mm solid ${GOLD}` }}>
+          <div style={{ height: "9mm", width: "9mm", borderRadius: "1.6mm", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden", border: `0.3mm solid ${GOLD}` }}>
+            {logo ? <img src={logo} alt="" style={{ height: "100%", width: "100%", objectFit: "contain" }} /> : <span style={{ fontSize: "4.5mm", fontWeight: 800, color: P }}>{(instName || "E")[0]}</span>}
           </div>
-          <div style={{ position: "absolute", left: 0, right: 0, textAlign: "center", pointerEvents: "none" }}>
-            <p style={{ margin: 0, fontWeight: 800, color: P, fontSize: "3mm", lineHeight: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", padding: "0 15mm 0 24mm" }}>{instName}</p>
-            <p style={{ margin: "0.5mm 0 0", fontSize: "1.6mm", letterSpacing: "0.5mm", color: A, fontWeight: 700 }}>{heading}</p>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ margin: 0, fontWeight: 800, color: "#fff", fontSize: "3mm", lineHeight: 1.05, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{instName}</p>
+            <p style={{ margin: "0.6mm 0 0", fontSize: "1.6mm", letterSpacing: "0.7mm", color: GOLD, fontWeight: 700 }}>{heading}</p>
           </div>
-          <div style={{ width: "26%", display: "flex", justifyContent: "flex-end", zIndex: 1 }}><QR size={40} /></div>
+          <div style={{ flexShrink: 0 }}><QR size={40} /></div>
         </div>
         {/* Body */}
-        <div style={{ display: "flex", gap: "3mm", padding: "1.4mm 3mm 0", height: "calc(100% - 11mm - 9mm)", alignItems: "flex-start", position: "relative" }}>
-          <Photo style={{ width: "20mm", height: "25mm" }} />
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.45mm", paddingTop: "0.4mm" }}>
+        <div style={{ display: "flex", gap: "3mm", padding: "1.8mm 3mm 0", height: "calc(100% - 13mm - 9mm)", alignItems: "flex-start", position: "relative" }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.8mm", flexShrink: 0 }}>
+            <Photo style={{ width: "20mm", height: "23mm" }} />
+            <span style={{ fontSize: "1.4mm", fontWeight: 700, letterSpacing: "0.3mm", color: A, textTransform: "uppercase" }}>{idValue}</span>
+          </div>
+          <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: "0.55mm", paddingTop: "0.4mm" }}>
             {fields.filter(([, v]) => v && String(v).trim()).map(([k, v]) => (
               <div key={k} style={{ display: "flex", alignItems: "baseline", fontSize: k === "Name" ? "2.5mm" : "1.85mm", lineHeight: 1.28 }}>
                 <span style={{ width: "22mm", flexShrink: 0, color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05mm", fontSize: "1.65mm" }}>{k}</span>
                 <span style={{ color: P, fontWeight: 800 }}>:&nbsp;</span>
-                <span style={{ color: P, fontWeight: k === "Name" ? 800 : 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{v}</span>
+                <span style={{ color: P, fontWeight: k === "Name" ? 800 : 600, overflow: "hidden", textOverflow: k === "Address" ? "clip" : "ellipsis", whiteSpace: k === "Address" ? "normal" : "nowrap", flex: 1 }}>{v}</span>
               </div>
             ))}
           </div>
         </div>
         {/* Footer */}
-        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "9mm", background: P, color: "#fff", display: "flex", alignItems: "center", flexWrap: "wrap", gap: "1mm 3mm", padding: "0 3mm", fontSize: "1.55mm" }}>
-          {address && <span style={{ display: "flex", alignItems: "center", gap: "0.8mm", maxWidth: "45%", overflow: "hidden" }}><MapPin size={7} color={GOLD} /><span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{address}</span></span>}
-          {contact && <span style={{ display: "flex", alignItems: "center", gap: "0.8mm" }}><Phone size={7} color={GOLD} />{contact}</span>}
-          {(inst.email || email) && <span style={{ display: "flex", alignItems: "center", gap: "0.8mm" }}><Mail size={7} color={GOLD} />{inst.email || email}</span>}
-          {website && <span style={{ display: "flex", alignItems: "center", gap: "0.8mm" }}><Globe size={7} color={GOLD} />{website}</span>}
+        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "9mm", background: P, color: "#fff", display: "flex", flexDirection: "column", justifyContent: "center", gap: "0.6mm", padding: "0 3mm", fontSize: "1.5mm" }}>
+          {schoolAddress && <span style={{ display: "flex", alignItems: "flex-start", gap: "0.8mm", lineHeight: 1.15 }}><MapPin size={7} color={GOLD} style={{ flexShrink: 0, marginTop: "0.2mm" }} /><span>{schoolAddress}</span></span>}
+          <span style={{ display: "flex", flexWrap: "wrap", gap: "0.6mm 3mm" }}>
+            {contact && <span style={{ display: "flex", alignItems: "center", gap: "0.8mm" }}><Phone size={7} color={GOLD} />{contact}</span>}
+            {(inst.email || email) && <span style={{ display: "flex", alignItems: "center", gap: "0.8mm" }}><Mail size={7} color={GOLD} />{inst.email || email}</span>}
+            {website && <span style={{ display: "flex", alignItems: "center", gap: "0.8mm" }}><Globe size={7} color={GOLD} />{website}</span>}
+          </span>
         </div>
       </div>
     );

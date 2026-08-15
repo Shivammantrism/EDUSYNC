@@ -24,7 +24,10 @@ function loadRzp() {
 }
 const downloadPdf = (path) => {
   const token = localStorage.getItem("edusync_token");
-  fetch(`${API}${path}`, { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.blob()).then((b) => window.open(URL.createObjectURL(b)));
+  fetch(`${API}${path}`, { headers: { Authorization: `Bearer ${token}` } }).then(async (r) => {
+    if (!r.ok) { const t = await r.json().catch(() => ({})); throw new Error(t.detail || "Could not generate report"); }
+    return r.blob();
+  }).then((b) => window.open(URL.createObjectURL(b))).catch((e) => toast.error(e.message || "Could not generate report"));
 };
 
 export default function Fees() {
@@ -41,11 +44,14 @@ export default function Fees() {
   const [newComp, setNewComp] = useState({ name: "", amount: "" });
   const [paying, setPaying] = useState(null);
   const [stats, setStats] = useState(null);
+  const [batches, setBatches] = useState([]);
+  const [defOpen, setDefOpen] = useState(false);
+  const [defFilter, setDefFilter] = useState({ class_name: "all", min_due: "" });
 
   const load = () => api.get("/fees").then((r) => setFees(r.data));
   useEffect(() => {
     load();
-    if (isPrincipal) { api.get("/students").then((r) => setStudents(r.data)); api.get("/fee-components").then((r) => setComponents(r.data)); api.get("/fees/stats").then((r) => setStats(r.data)).catch(() => {}); }
+    if (isPrincipal) { api.get("/students").then((r) => setStudents(r.data)); api.get("/fee-components").then((r) => setComponents(r.data)); api.get("/fees/stats").then((r) => setStats(r.data)).catch(() => {}); api.get("/batches").then((r) => setBatches(r.data)).catch(() => {}); }
   }, []);
 
   const selectedItems = () => components.filter((c) => form.selected[c.id]).map((c) => ({ name: c.name, amount: c.amount }));
@@ -118,7 +124,38 @@ export default function Fees() {
       <PageHeader title={isPrincipal ? "Fee Management" : "Fees & Receipts"} subtitle={`${money(totalPending)} outstanding`} actions={
         isPrincipal && (
           <div className="flex flex-wrap gap-2">
-            <Button data-testid="defaulter-report-btn" variant="outline" onClick={() => downloadPdf("/fees/defaulters-report")}><Download className="h-4 w-4 mr-2" />Defaulter Report</Button>
+            <Dialog open={defOpen} onOpenChange={setDefOpen}>
+              <DialogTrigger asChild><Button data-testid="defaulter-report-btn" variant="outline"><Download className="h-4 w-4 mr-2" />Defaulter Report</Button></DialogTrigger>
+              <DialogContent>
+                <DialogHeader><DialogTitle>Fee Defaulter Report</DialogTitle></DialogHeader>
+                <div className="space-y-3">
+                  <div>
+                    <Label>Class / Section</Label>
+                    <Select value={defFilter.class_name} onValueChange={(v) => setDefFilter({ ...defFilter, class_name: v })}>
+                      <SelectTrigger data-testid="def-class-filter"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Classes</SelectItem>
+                        {[...new Set(batches.map((b) => b.name || b.class_name).filter(Boolean))].map((n) => <SelectItem key={n} value={n}>{n}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Minimum Due (₹)</Label>
+                    <Input data-testid="def-mindue-filter" type="number" min="0" placeholder="e.g. 5000" value={defFilter.min_due} onChange={(e) => setDefFilter({ ...defFilter, min_due: e.target.value })} />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button data-testid="def-download-btn" className="btn-gradient" onClick={() => {
+                    const p = new URLSearchParams();
+                    if (defFilter.class_name && defFilter.class_name !== "all") p.set("class_name", defFilter.class_name);
+                    if (defFilter.min_due) p.set("min_due", defFilter.min_due);
+                    const qs = p.toString();
+                    downloadPdf(`/fees/defaulters-report${qs ? `?${qs}` : ""}`);
+                    setDefOpen(false);
+                  }}><Download className="h-4 w-4 mr-2" />Download PDF</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
             <Button data-testid="remind-all-btn" variant="outline" onClick={remindAll}><BellRing className="h-4 w-4 mr-2" />Remind Overdue</Button>
             <Dialog open={compOpen} onOpenChange={setCompOpen}>
               <DialogTrigger asChild><Button data-testid="manage-components-btn" variant="outline"><Settings2 className="h-4 w-4 mr-2" />Fee Structure</Button></DialogTrigger>
