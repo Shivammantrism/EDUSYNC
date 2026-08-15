@@ -346,3 +346,11 @@ All use `notify_parent_async` (WhatsApp-first via TWILIO_WHATSAPP_FROM → SMS f
 - **Faculty** uses the exact same premium template + orientations: heading "STAFF IDENTITY CARD", rows = Staff ID / Subjects / Phone / Blood Group, Designation as the prominent pill.
 - VERIFIED via screenshots (faculty landscape + portrait): fields aligned, QR clear, prominent pill + rows readable, no overlaps. Student route is `/app/id-card` (single) & batch page; faculty at `/app/faculty-ids`.
 
+## ID Card Final Layout + Back Side + Custom Colors (2026-08-15, part 36) — DONE
+- Landscape footer fully separated: **Contact + Address** stacked bottom-left, **QR** in the bottom-right corner (clear margin, no overlap). Address is its own 2-line clamped line in a smaller font that stays inside the white area.
+- **Class / Sec** now shows as its own row directly below Roll No (students). All overlay text is dark navy (institute primary) for readability; nothing overlaps the gold/green art.
+- **Faculty** uses the identical landscape design: heading "STAFF IDENTITY CARD", rows = Staff ID / Designation / Subjects / Blood Group.
+- **Card back** (`side="back"`, testids `id-card-back` / `faculty-id-card-back`): institute-colored header, visual barcode + ID, Emergency Contact, Terms of Use, and a Principal signature line. Front/Back dropdown on both batch pages (`id-side`, `id-side-faculty`) — print fronts, flip, print backs.
+- **Custom colors**: institute fields `id_card_primary` + `id_card_accent` added to `PUT /institute` allowed set; two color pickers on the batch pages (`color-primary/-accent`) save instantly and re-theme every card (front + back). IDCard reads `inst.id_card_primary/accent` with navy/emerald fallback.
+- VERIFIED: all four files compile; back-side screenshot confirms clean layout; color pickers + Front/Back toggle functional.
+

@@ -3896,7 +3896,7 @@ async def get_institute(user=Depends(get_current_user)):
 
 @api.put("/institute")
 async def update_institute(payload: dict, user=Depends(require("principal"))):
-    allowed = {"name", "address", "phone", "email", "logo_url", "logo_path", "seal_url", "seal_path", "id_template", "upi_id", "metro", "collection_target", "code"}
+    allowed = {"name", "address", "phone", "email", "logo_url", "logo_path", "seal_url", "seal_path", "id_template", "upi_id", "metro", "collection_target", "code", "id_card_primary", "id_card_accent"}
     upd = {k: v for k, v in payload.items() if k in allowed and v is not None}
     if "code" in upd:
         clean = "".join(c for c in str(upd["code"]) if c.isalnum()).upper()[:4]

@@ -17,6 +17,10 @@ export default function BulkIDCards() {
   const [perPage, setPerPage] = useState("24");
   const [preset, setPreset] = useState("standard");
   const [orientation, setOrientation] = useState("landscape");
+  const [side, setSide] = useState("front");
+  const [theme, setTheme] = useState({ id_card_primary: institute?.id_card_primary || "#001E4D", id_card_accent: institute?.id_card_accent || "#047857" });
+  const saveTheme = async (t) => { setTheme(t); try { await api.put("/institute", t); toast.success("Card colors saved"); } catch { toast.error("Could not save colors"); } };
+  const instThemed = { ...institute, ...theme };
 
   useEffect(() => {
     api.get("/students", { params: { batch_id: batchId } }).then((r) => setStudents(r.data));
@@ -42,6 +46,14 @@ export default function BulkIDCards() {
               <SelectTrigger data-testid="id-orientation" className="h-9 w-[180px]"><SelectValue /></SelectTrigger>
               <SelectContent><SelectItem value="landscape">Horizontal (Landscape)</SelectItem><SelectItem value="portrait">Vertical (Portrait)</SelectItem></SelectContent>
             </Select>
+            <Select value={side} onValueChange={setSide}>
+              <SelectTrigger data-testid="id-side" className="h-9 w-[120px]"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="front">Front</SelectItem><SelectItem value="back">Back</SelectItem></SelectContent>
+            </Select>
+            <label className="flex items-center gap-1 text-xs text-slate-500" title="Primary color">Theme
+              <input data-testid="color-primary" type="color" value={theme.id_card_primary} onChange={(e) => saveTheme({ ...theme, id_card_primary: e.target.value })} className="h-7 w-8 rounded border cursor-pointer" />
+              <input data-testid="color-accent" type="color" value={theme.id_card_accent} onChange={(e) => saveTheme({ ...theme, id_card_accent: e.target.value })} className="h-7 w-8 rounded border cursor-pointer" />
+            </label>
             <Select value={perPage} onValueChange={setPerPage}>
               <SelectTrigger data-testid="stickers-perpage" className="h-9 w-[130px]"><SelectValue /></SelectTrigger>
               <SelectContent><SelectItem value="12">12 / page</SelectItem><SelectItem value="24">24 / page</SelectItem><SelectItem value="30">30 / page</SelectItem></SelectContent>
@@ -57,7 +69,7 @@ export default function BulkIDCards() {
       </div>
       {students.length === 0 ? <Empty icon={IdIcon} title="No students in this batch" /> : (
         <div className="flex flex-wrap gap-6 justify-center">
-          {students.map((s) => <IDCard key={s.id} student={s} institute={institute} orientation={orientation} />)}
+          {students.map((s) => <IDCard key={s.id} student={s} institute={instThemed} orientation={orientation} side={side} />)}
         </div>
       )}
     </div>
