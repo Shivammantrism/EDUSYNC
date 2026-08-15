@@ -338,3 +338,11 @@ All use `notify_parent_async` (WhatsApp-first via TWILIO_WHATSAPP_FROM → SMS f
 - Orientation selector (Horizontal/Vertical dropdown) added to all three ID modules: `IDCardPage.jsx` (single, testid `id-orientation`), `BulkIDCards.jsx` (batch, `id-orientation`), `FacultyIDCards.jsx` (batch, `id-orientation-faculty`). Default landscape.
 - VERIFIED via screenshots (faculty batch, both orientations): selector switches templates, all fields populate and align within CR80, QR + labels readable. NOTE: IDCard.jsx portrait edit silently reverted once (recurring large-file issue) — re-applied and confirmed via view.
 
+## ID Card Layout & Info Mapping Fixes (2026-08-15, part 35) — DONE
+- Rewrote `IDCard.jsx` overlays for both orientations: single consistent font (`'Helvetica Neue', Helvetica, Arial`; removed monospace), sharper alignment, CR80 preserved.
+- **QR** moved to a dedicated corner (landscape bottom-right, portrait bottom-right) so it never overlaps the CONTACT/PHONE row. **CONTACT** row now uses a flex label(fixed-width)+value(flex, ellipsis) layout — clean alignment.
+- **Prominent line**: students show a highlighted "Class {X} • Sec {Y}" pill under the ID; faculty show their Designation ("Teacher") pill. Removed Class/Sec from the generic rows to avoid duplication.
+- **Address**: dedicated multi-line (2-line clamp) block added — landscape below the detail rows, portrait bottom-left; auto-sized font, doesn't overlap the QR.
+- **Faculty** uses the exact same premium template + orientations: heading "STAFF IDENTITY CARD", rows = Staff ID / Subjects / Phone / Blood Group, Designation as the prominent pill.
+- VERIFIED via screenshots (faculty landscape + portrait): fields aligned, QR clear, prominent pill + rows readable, no overlaps. Student route is `/app/id-card` (single) & batch page; faculty at `/app/faculty-ids`.
+
