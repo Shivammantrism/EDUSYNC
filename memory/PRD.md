@@ -354,3 +354,12 @@ All use `notify_parent_async` (WhatsApp-first via TWILIO_WHATSAPP_FROM → SMS f
 - **Custom colors**: institute fields `id_card_primary` + `id_card_accent` added to `PUT /institute` allowed set; two color pickers on the batch pages (`color-primary/-accent`) save instantly and re-theme every card (front + back). IDCard reads `inst.id_card_primary/accent` with navy/emerald fallback.
 - VERIFIED: all four files compile; back-side screenshot confirms clean layout; color pickers + Front/Back toggle functional.
 
+## ID Card Premium Landscape Redesign (2026-08-15, part 37) — DONE
+- Rebuilt the landscape front as a custom layout (no template image) per the Shivam-Mantri reference, applied to BOTH students & faculty at CR80:
+  - Header: institute logo + tagline ("Innovation That Matters") on the left, institute name large bold navy centered, QR top-right (separated), gold divider.
+  - Body: student photo left (rounded, thin gold border); centered data fields with navy uppercase labels + colon + bold values — student: Name/Roll No/Class-Sec/DOB/Father's Name/Blood Group/Mobile/Email; faculty: Name/Staff ID/Designation/DOB/Subjects/Blood Group/Mobile/Email.
+  - Gold seal (uploaded seal or an "OFFICIAL SEAL" badge) bottom-right watermark.
+  - Dark navy footer with Address/Phone/Email/Website (MapPin/Phone/Mail/Globe icons), light text.
+- All text is navy/dark for contrast; portrait + back sides and per-institute theme colors (id_card_primary/accent) retained.
+- VERIFIED via screenshot (faculty landscape) — layout matches spec; fixed institute-name truncation via header padding/size.
+
