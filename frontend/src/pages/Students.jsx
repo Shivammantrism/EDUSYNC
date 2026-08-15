@@ -54,6 +54,8 @@ export default function Students() {
     if (missing.length) { toast.error(`Please fill required field(s): ${missing.join(", ")}`); return; }
     if (!phoneOk(form.parent_phone) || !phoneOk(form.emergency_contact)) { toast.error("Enter valid phone number(s) — 10 to 15 digits"); return; }
     if (!emailOk(form.parent_email) || !emailOk(form.email)) { toast.error("Enter a valid email address"); return; }
+    const dup = form.batch_id && students.some((s) => s.batch_id === form.batch_id && String(s.roll_no || "").trim().toLowerCase() === String(form.roll_no).trim().toLowerCase() && s.id !== editId);
+    if (dup) { toast.error(`Roll No ${form.roll_no} is already assigned in this class. Please use a different roll number.`); return; }
     setSaving(true);
     try {
       const payload = { ...form, age: Number(form.age), monthly_fee: Number(form.monthly_fee) };
@@ -80,6 +82,7 @@ export default function Students() {
   const filtered = students.filter((s) => (s.name.toLowerCase().includes(q.toLowerCase()) || s.student_id.toLowerCase().includes(q.toLowerCase())) && (!clsParam || s.batch_id === clsParam));
   const errs = { parent_phone: !phoneOk(form.parent_phone), emergency_contact: !phoneOk(form.emergency_contact), parent_email: !emailOk(form.parent_email), email: !emailOk(form.email) };
   const hasErrs = Object.values(errs).some(Boolean);
+  const rollDup = !!(form.roll_no && form.batch_id && students.some((s) => s.batch_id === form.batch_id && String(s.roll_no || "").trim().toLowerCase() === String(form.roll_no).trim().toLowerCase() && s.id !== editId));
   const selBatch = batches.find((b) => b.id === form.batch_id) || {};
   const previewStudent = { name: form.name, student_id: form.student_id || (editId ? "" : "AUTO ON SAVE"), photo_url: form.photo_url, roll_no: form.roll_no, class_name: selBatch.class_name || selBatch.name || "", section: selBatch.section || "", batch_name: selBatch.name || "", parent_name: form.parent_name, dob: form.dob, blood_group: form.blood_group, emergency_contact: form.emergency_contact, parent_phone: form.parent_phone, address: form.address, template: form.template };
 
@@ -121,7 +124,7 @@ export default function Students() {
                       <SelectContent>{batches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}{b.class_name ? ` · ${b.class_name}${b.section ? "-" + b.section : ""}` : ""}</SelectItem>)}</SelectContent>
                     </Select>
                   </div>
-                  <div><Label>Roll No <span className="text-red-500">*</span></Label><Input data-testid="student-roll-no" value={form.roll_no} onChange={(e) => setForm({ ...form, roll_no: e.target.value })} placeholder="e.g. 12" /></div>
+                  <div><Label>Roll No <span className="text-red-500">*</span></Label><Input data-testid="student-roll-no" value={form.roll_no} onChange={(e) => setForm({ ...form, roll_no: e.target.value })} placeholder="e.g. 12" />{rollDup && <p data-testid="err-roll-dup" className="text-xs text-amber-600 mt-1">⚠ Roll No already used in this class</p>}</div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div><Label>Father's Name</Label><Input data-testid="student-parent-name" value={form.parent_name} onChange={(e) => setForm({ ...form, parent_name: e.target.value })} /></div>
@@ -186,7 +189,7 @@ export default function Students() {
                 <div className="sticky top-0" data-testid="id-preview"><IDCard student={previewStudent} institute={institute} /></div>
               </div>
               </div>
-              <DialogFooter><Button data-testid="save-student-btn" onClick={save} disabled={saving || hasErrs || !form.name || !form.batch_id || !form.roll_no || !form.dob || !form.blood_group || !form.emergency_contact} className="btn-gradient">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : (editId ? "Save Changes" : "Register")}</Button></DialogFooter>
+              <DialogFooter><Button data-testid="save-student-btn" onClick={save} disabled={saving || hasErrs || rollDup || !form.name || !form.batch_id || !form.roll_no || !form.dob || !form.blood_group || !form.emergency_contact} className="btn-gradient">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : (editId ? "Save Changes" : "Register")}</Button></DialogFooter>
             </DialogContent>
           </Dialog>
         )
