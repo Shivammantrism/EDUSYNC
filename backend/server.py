@@ -2044,23 +2044,8 @@ async def ai_generate_quiz(body: QuizGenIn, user=Depends(require("principal", "t
         raise HTTPException(500, "Could not generate questions. Please try again or add them manually.")
 
 
-# ---------------------------------------------------------------- salary
-@api.get("/salaries")
-async def list_salaries(user=Depends(require("principal", "teacher"))):
-    q = scope(user)
-    if user["role"] == "teacher":
-        q["teacher_id"] = user["id"]
-    return await db.salaries.find(q, {"_id": 0}).sort("month", -1).to_list(2000)
-
-
-@api.post("/salaries")
-async def create_salary(body: SalaryIn, user=Depends(require("principal"))):
-    t = await db.users.find_one({"id": body.teacher_id, "institute_id": user["institute_id"]})
-    if not t:
-        raise HTTPException(404, "Teacher not found")
-    if await db.salaries.find_one({"teacher_id": body.teacher_id, "month": body.month, "institute_id": user["institute_id"]}):
-        raise HTTPException(409, "Salary already generated for this teacher and month")
-    inst = await db.institutes.find_one({"id": user["institute_id"]}) or {}
+async def _gen_salary(t, month, institute_id):
+    inst = await db.institutes.find_one({"id": institute_id}) or {}
     metro = bool(inst.get("metro", False))
     comp = t.get("salary_components") or {}
     gross = float(t.get("monthly_salary") or 0)
@@ -2069,9 +2054,7 @@ async def create_salary(body: SalaryIn, user=Depends(require("principal"))):
     gross = round(gross, 2)
     base = round(gross * 0.45, 2)
     hra = round(base * (0.5 if metro else 0.4), 2)
-    special = round(gross - base - hra, 2)
-    if special < 0:
-        special = 0.0
+    special = max(round(gross - base - hra, 2), 0.0)
     extra_ded = float(comp.get("deductions", 0) or 0)
     epf = round(base * 0.12, 2)
     pt = 200.0 if gross >= 15000 else (150.0 if gross >= 10000 else 0.0)
@@ -2088,29 +2071,79 @@ async def create_salary(body: SalaryIn, user=Depends(require("principal"))):
     else:
         tax = 80000 + (taxable - 1200000) * 0.20
     tds = round(tax / 12, 2)
-    y, m = int(body.month[:4]), int(body.month[5:7])
+    y, m = int(month[:4]), int(month[5:7])
     dim = calendar.monthrange(y, m)[1]
     ms, me = date(y, m, 1), date(y, m, dim)
-    lwp_days = 0
-    for lv in await db.leaves.find({"institute_id": user["institute_id"], "teacher_id": body.teacher_id, "status": "rejected"}).to_list(1000):
+    leave_lwp = 0
+    for lv in await db.leaves.find({"institute_id": institute_id, "teacher_id": t["id"], "status": "rejected"}).to_list(1000):
         try:
             f = date.fromisoformat(lv["from_date"]); tt = date.fromisoformat(lv["to_date"])
         except Exception:
             continue
         s0, e0 = max(f, ms), min(tt, me)
         if s0 <= e0:
-            lwp_days += (e0 - s0).days + 1
+            leave_lwp += (e0 - s0).days + 1
+    # attendance-based LWP: absent working days (Mon-Sat) when attendance is tracked
+    present = await db.teacher_attendance.count_documents({"institute_id": institute_id, "teacher_id": t["id"], "date": {"$regex": f"^{month}"}})
+    absent_days = 0
+    if present > 0:
+        working = sum(1 for dd in range(1, dim + 1) if date(y, m, dd).weekday() != 6)
+        absent_days = max(working - present, 0)
+    lwp_days = leave_lwp + absent_days
     lwp_amount = round(gross / dim * lwp_days, 2) if dim else 0
     total_ded = round(epf + pt + tds + extra_ded + lwp_amount, 2)
     net = round(gross - total_ded, 2)
     sid = str(uuid.uuid4())
-    await db.salaries.insert_one({"id": sid, "teacher_id": body.teacher_id, "teacher_name": t["name"],
-                                  "month": body.month, "base": base, "hra": hra, "special": special, "allowances": special,
-                                  "gross": gross, "epf": epf, "professional_tax": pt, "tds": tds, "extra_deductions": extra_ded,
-                                  "deductions": round(epf + pt + tds + extra_ded, 2), "metro": metro,
-                                  "days_in_month": dim, "lwp_days": lwp_days, "lwp_amount": lwp_amount,
-                                  "total_deductions": total_ded, "amount": net, "status": "pending",
-                                  "institute_id": user["institute_id"], "created_at": now_iso()})
+    await db.salaries.insert_one({"id": sid, "teacher_id": t["id"], "teacher_name": t["name"], "month": month,
+                                  "base": base, "hra": hra, "special": special, "allowances": special, "gross": gross,
+                                  "epf": epf, "professional_tax": pt, "tds": tds, "extra_deductions": extra_ded,
+                                  "extra_allowance": 0.0, "deductions": round(epf + pt + tds + extra_ded, 2), "metro": metro,
+                                  "days_in_month": dim, "lwp_days": lwp_days, "leave_lwp_days": leave_lwp, "absent_days": absent_days,
+                                  "lwp_amount": lwp_amount, "total_deductions": total_ded, "amount": net, "status": "pending",
+                                  "institute_id": institute_id, "created_at": now_iso()})
+    return sid
+
+
+# ---------------------------------------------------------------- salary
+@api.get("/salaries")
+async def list_salaries(user=Depends(require("principal", "teacher"))):
+    q = scope(user)
+    if user["role"] == "teacher":
+        q["teacher_id"] = user["id"]
+    return await db.salaries.find(q, {"_id": 0}).sort("month", -1).to_list(2000)
+
+
+@api.post("/salaries")
+async def create_salary(body: SalaryIn, user=Depends(require("principal"))):
+    t = await db.users.find_one({"id": body.teacher_id, "institute_id": user["institute_id"]})
+    if not t:
+        raise HTTPException(404, "Teacher not found")
+    if await db.salaries.find_one({"teacher_id": body.teacher_id, "month": body.month, "institute_id": user["institute_id"]}):
+        raise HTTPException(409, "Salary already generated for this teacher and month")
+    sid = await _gen_salary(t, body.month, user["institute_id"])
+    return await db.salaries.find_one({"id": sid}, {"_id": 0})
+
+
+class SalaryAdjust(BaseModel):
+    extra_deductions: Optional[float] = None
+    extra_allowance: Optional[float] = None
+    note: Optional[str] = ""
+
+
+@api.patch("/salaries/{sid}")
+async def adjust_salary(sid: str, body: SalaryAdjust, user=Depends(require("principal"))):
+    s = await db.salaries.find_one({"id": sid, "institute_id": user["institute_id"]}, {"_id": 0})
+    if not s:
+        raise HTTPException(404, "Salary not found")
+    if s.get("status") == "paid":
+        raise HTTPException(400, "Cannot adjust a paid salary")
+    extra_ded = body.extra_deductions if body.extra_deductions is not None else s.get("extra_deductions", 0)
+    extra_allow = body.extra_allowance if body.extra_allowance is not None else s.get("extra_allowance", 0)
+    total_ded = round(s["epf"] + s["professional_tax"] + s["tds"] + float(extra_ded) + s.get("lwp_amount", 0), 2)
+    net = round(s["gross"] + float(extra_allow) - total_ded, 2)
+    await db.salaries.update_one({"id": sid}, {"$set": {"extra_deductions": float(extra_ded), "extra_allowance": float(extra_allow),
+                                 "deductions": round(s["epf"] + s["professional_tax"] + s["tds"] + float(extra_ded), 2),
+                                 "total_deductions": total_ded, "amount": net, "adjust_note": body.note or ""}})
     return await db.salaries.find_one({"id": sid}, {"_id": 0})
 
 
@@ -2119,6 +2152,84 @@ async def pay_salary(sid: str, user=Depends(require("principal"))):
     slip_no = "SAL-" + datetime.now().strftime("%y%m%d") + "-" + uuid.uuid4().hex[:5].upper()
     await db.salaries.update_one({"id": sid, "institute_id": user["institute_id"]}, {"$set": {"status": "paid", "paid_at": now_iso(), "slip_no": slip_no}})
     return {"ok": True, "slip_no": slip_no}
+
+
+async def _generate_monthly_salaries():
+    month = datetime.now().strftime("%Y-%m")
+    count = 0
+    for t in await db.users.find({"role": "teacher"}, {"_id": 0}).to_list(100000):
+        gross = float(t.get("monthly_salary") or 0)
+        comp = t.get("salary_components") or {}
+        if gross <= 0:
+            gross = float(comp.get("base", 0)) + float(comp.get("hra", 0)) + float(comp.get("allowances", 0))
+        if gross <= 0:
+            continue
+        if await db.salaries.find_one({"teacher_id": t["id"], "month": month, "institute_id": t.get("institute_id")}):
+            continue
+        try:
+            await _gen_salary(t, month, t.get("institute_id")); count += 1
+        except Exception as e:
+            logger.warning(f"salary gen failed for {t.get('id')}: {e}")
+    logger.info(f"monthly salaries generated: {count}")
+
+
+@api.post("/cron/generate-monthly-salaries")
+async def cron_generate_monthly_salaries(request: Request):
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    secret = os.environ.get("WEBHOOK_CRON_SECRET", "")
+    auth = request.headers.get("Authorization", "")
+    token = auth[7:] if auth.startswith("Bearer ") else ""
+    if not secret or not hmac.compare_digest(token, secret):
+        raise HTTPException(401, "Unauthorized")
+    asyncio.create_task(_generate_monthly_salaries())
+    return {"status": "accepted"}
+
+
+@api.get("/salaries/{sid}/slip")
+async def salary_slip(sid: str, user=Depends(require("principal", "teacher"))):
+    q = {"id": sid, "institute_id": user["institute_id"]}
+    if user["role"] == "teacher":
+        q["teacher_id"] = user["id"]
+    s = await db.salaries.find_one(q, {"_id": 0})
+    if not s:
+        raise HTTPException(404, "Salary not found")
+    if s.get("status") != "paid":
+        raise HTTPException(400, "Salary slip is available once the salary is marked Paid")
+    inst = await db.institutes.find_one({"id": user["institute_id"]})
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import cm
+    from reportlab.lib import colors
+    from reportlab.pdfgen import canvas
+    buf = io.BytesIO(); c = canvas.Canvas(buf, pagesize=A4); w, h = A4
+    draw_watermark(c, inst, w, h)
+    draw_letterhead(c, inst, w, h, f"Salary Slip — {s.get('month')}")
+    y = h - 4.6 * cm
+    c.setFillColor(colors.HexColor("#0b1e3b")); c.setFont("Helvetica-Bold", 11)
+    c.drawString(2 * cm, y, f"Employee: {s.get('teacher_name')}")
+    c.drawRightString(w - 2 * cm, y, f"Slip No: {s.get('slip_no', '-')}"); y -= 0.5 * cm
+    c.setFont("Helvetica", 9.5); c.setFillColor(colors.HexColor("#475569"))
+    c.drawString(2 * cm, y, f"Month: {s.get('month')}   |   Paid Days: {s.get('days_in_month', 0) - s.get('lwp_days', 0)} / {s.get('days_in_month', 0)}   |   LWP Days: {s.get('lwp_days', 0)}"); y -= 0.8 * cm
+    earnings = [("Basic", s.get("base", 0)), ("HRA", s.get("hra", 0)), ("Special Allowance", s.get("special", 0)), ("Adjustment Allowance", s.get("extra_allowance", 0))]
+    deductions = [("EPF", s.get("epf", 0)), ("Professional Tax", s.get("professional_tax", 0)), ("TDS", s.get("tds", 0)), ("Other Deductions", s.get("extra_deductions", 0)), ("LWP", s.get("lwp_amount", 0))]
+    c.setFillColor(colors.HexColor("#0b2a5b")); c.setFont("Helvetica-Bold", 10)
+    c.drawString(2 * cm, y, "EARNINGS"); c.drawString(11 * cm, y, "DEDUCTIONS"); y -= 0.45 * cm
+    c.setFont("Helvetica", 9.5); ry = y
+    for k, v in earnings:
+        c.setFillColor(colors.HexColor("#1f2937")); c.drawString(2 * cm, ry, k); c.drawRightString(9.5 * cm, ry, f"{float(v or 0):,.2f}"); ry -= 0.45 * cm
+    dy = y
+    for k, v in deductions:
+        c.setFillColor(colors.HexColor("#1f2937")); c.drawString(11 * cm, dy, k); c.drawRightString(w - 2 * cm, dy, f"{float(v or 0):,.2f}"); dy -= 0.45 * cm
+    yy = min(ry, dy) - 0.3 * cm
+    c.setStrokeColor(colors.HexColor("#e2e8f0")); c.line(2 * cm, yy, w - 2 * cm, yy); yy -= 0.6 * cm
+    c.setFont("Helvetica-Bold", 10.5); c.setFillColor(colors.HexColor("#0b1e3b"))
+    c.drawString(2 * cm, yy, f"Gross Earnings: INR {float(s.get('gross', 0)):,.2f}")
+    c.drawRightString(w - 2 * cm, yy, f"Total Deductions: INR {float(s.get('total_deductions', 0)):,.2f}"); yy -= 0.9 * cm
+    c.setFillColor(colors.HexColor("#059669")); c.setFont("Helvetica-Bold", 15)
+    c.drawCentredString(w / 2, yy, f"NET PAY: INR {float(s.get('amount', 0)):,.2f}")
+    c.setFont("Helvetica-Oblique", 8); c.setFillColor(colors.HexColor("#94a3b8"))
+    c.drawCentredString(w / 2, 2 * cm, "This is a system-generated salary slip and does not require a physical signature.")
+    c.showPage(); c.save(); buf.seek(0)
+    return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": f"inline; filename=salary_slip_{s.get('month')}.pdf"})
 
 
 # ---------------------------------------------------------------- announcements
@@ -2669,67 +2780,6 @@ async def report_card(sid: str, user=Depends(get_current_user)):
 async def update_remarks(sid: str, payload: dict, user=Depends(require("principal", "teacher"))):
     await db.students.update_one({"id": sid, "institute_id": user["institute_id"]}, {"$set": {"remarks": payload.get("remarks", "")}})
     return {"ok": True}
-
-
-@api.get("/salaries/{sid}/slip")
-async def salary_slip(sid: str, user=Depends(require("principal", "teacher"))):
-    sal = await db.salaries.find_one({"id": sid, "institute_id": user["institute_id"]}, {"_id": 0})
-    if not sal:
-        raise HTTPException(404, "Not found")
-    if user["role"] == "teacher" and sal["teacher_id"] != user["id"]:
-        raise HTTPException(403, "Forbidden")
-    inst = await db.institutes.find_one({"id": user["institute_id"]})
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.units import cm
-    from reportlab.lib import colors
-    from reportlab.pdfgen import canvas
-    buf = io.BytesIO()
-    c = canvas.Canvas(buf, pagesize=A4)
-    w, h = A4
-    draw_watermark(c, inst, w, h)
-    draw_letterhead(c, inst, w, h, f"Salary Slip - {sal['month']}")
-    y = h - 4.9 * cm
-    c.setFillColor(colors.HexColor("#0F172A")); c.setFont("Helvetica-Bold", 11)
-    c.drawString(2 * cm, y, f"Employee: {sal['teacher_name']}")
-    c.drawRightString(w - 2 * cm, y, f"Month: {sal['month']}"); y -= 0.55 * cm
-    c.setFont("Helvetica", 9); c.setFillColor(colors.HexColor("#64748B"))
-    c.drawString(2 * cm, y, f"HRA basis: {'Metro (50%)' if sal.get('metro') else 'Non-Metro (40%)'}   |   Days: {sal.get('days_in_month', 30)}   |   Slip: {sal.get('slip_no', '-')}")
-    y -= 0.85 * cm
-    colL, colR = 2 * cm, 11 * cm
-    c.setFont("Helvetica-Bold", 11)
-    c.setFillColor(colors.HexColor("#1E3A8A")); c.drawString(colL, y, "Earnings")
-    c.setFillColor(colors.HexColor("#DC2626")); c.drawString(colR, y, "Deductions")
-    y -= 0.18 * cm; c.setStrokeColor(colors.HexColor("#E2E8F0"))
-    c.line(colL, y, colL + 7 * cm, y); c.line(colR, y, colR + 6 * cm, y); y -= 0.55 * cm
-    earn = [("Basic Pay", sal.get('base', 0)), ("HRA", sal.get('hra', 0)), ("Special Allowance", sal.get('special', sal.get('allowances', 0)))]
-    ded = [("EPF (12% of Basic)", sal.get('epf', 0)), ("Professional Tax", sal.get('professional_tax', 0)), ("TDS", sal.get('tds', 0))]
-    if sal.get('extra_deductions', 0):
-        ded.append(("Other Deductions", sal.get('extra_deductions', 0)))
-    if sal.get('lwp_amount', 0):
-        ded.append((f"LWP ({sal.get('lwp_days', 0)}d)", sal.get('lwp_amount', 0)))
-    c.setFont("Helvetica", 10)
-    y0 = y
-    for i in range(max(len(earn), len(ded))):
-        yy = y0 - i * 0.55 * cm
-        c.setFillColor(colors.HexColor("#0F172A"))
-        if i < len(earn):
-            c.drawString(colL, yy, earn[i][0]); c.drawRightString(colL + 7 * cm, yy, f"Rs. {earn[i][1]}")
-        if i < len(ded):
-            c.drawString(colR, yy, ded[i][0]); c.drawRightString(colR + 6 * cm, yy, f"Rs. {ded[i][1]}")
-    y = y0 - max(len(earn), len(ded)) * 0.55 * cm - 0.35 * cm
-    c.setStrokeColor(colors.HexColor("#E2E8F0")); c.line(colL, y, w - 2 * cm, y); y -= 0.6 * cm
-    c.setFont("Helvetica-Bold", 11)
-    c.setFillColor(colors.HexColor("#1E3A8A")); c.drawString(colL, y, f"Gross: Rs. {sal.get('gross', sal['amount'])}")
-    c.setFillColor(colors.HexColor("#DC2626")); c.drawRightString(w - 2 * cm, y, f"Total Deductions: Rs. {sal.get('total_deductions', sal.get('deductions', 0))}")
-    y -= 1.0 * cm
-    c.setFillColor(colors.HexColor("#059669")); c.setFont("Helvetica-Bold", 15)
-    c.drawString(colL, y, f"NET PAY: Rs. {sal['amount']}")
-    c.setFont("Helvetica", 10); c.setFillColor(colors.HexColor("#0F172A"))
-    c.drawRightString(w - 2 * cm, y, f"Status: {sal['status'].upper()}")
-    c.setFillColor(colors.HexColor("#64748B")); c.setFont("Helvetica-Oblique", 8)
-    c.drawString(2 * cm, 1.5 * cm, "Generated by EduSync — Privam Solutions")
-    c.showPage(); c.save(); buf.seek(0)
-    return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": f"inline; filename=slip_{sid}.pdf"})
 
 
 @api.post("/salaries/{sid}/email-slip")

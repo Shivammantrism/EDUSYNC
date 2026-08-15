@@ -14,3 +14,10 @@ crons:
     method: POST
     # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
     enabled: true
+  - name: monthly-faculty-salaries
+    description: "Auto-generates a Pending salary record for every faculty member on the 1st"
+    cron: "0 3 1 * *"
+    endpoint: "{{BASE_URL}}/api/cron/generate-monthly-salaries"
+    method: POST
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    enabled: true

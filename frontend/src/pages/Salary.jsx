@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Banknote, Plus, CheckCircle2, Download, SlidersHorizontal, Mail } from "lucide-react";
+import { Banknote, Plus, CheckCircle2, Download, SlidersHorizontal, Mail, Pencil } from "lucide-react";
 
 export default function Salary() {
   const { user } = useAuth();
@@ -21,6 +21,8 @@ export default function Salary() {
   const [structOpen, setStructOpen] = useState(false);
   const [form, setForm] = useState({ teacher_id: "", month: new Date().toISOString().slice(0, 7) });
   const [struct, setStruct] = useState({ teacher_id: "", base: 30000, hra: 8000, allowances: 4000, deductions: 2000 });
+  const [adjustOpen, setAdjustOpen] = useState(false);
+  const [adjust, setAdjust] = useState({ id: "", teacher_name: "", month: "", extra_deductions: 0, extra_allowance: 0, note: "" });
 
   const load = () => api.get("/salaries").then((r) => setSalaries(r.data));
   useEffect(() => { load(); if (isPrincipal) api.get("/teachers").then((r) => setTeachers(r.data)); }, []);
@@ -33,6 +35,16 @@ export default function Salary() {
     try {
       await api.put(`/teachers/${struct.teacher_id}/salary-structure`, { base: Number(struct.base), hra: Number(struct.hra), allowances: Number(struct.allowances), deductions: Number(struct.deductions) });
       toast.success("Salary structure saved"); setStructOpen(false);
+    } catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
+  };
+  const openAdjust = (s) => {
+    setAdjust({ id: s.id, teacher_name: s.teacher_name, month: s.month, extra_deductions: s.extra_deductions || 0, extra_allowance: s.extra_allowance || 0, note: s.adjust_note || "" });
+    setAdjustOpen(true);
+  };
+  const saveAdjust = async () => {
+    try {
+      const { data } = await api.patch(`/salaries/${adjust.id}`, { extra_deductions: Number(adjust.extra_deductions), extra_allowance: Number(adjust.extra_allowance), note: adjust.note });
+      toast.success(`Adjusted · Net ${money(data.amount)}`); setAdjustOpen(false); load();
     } catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
   };
   const pay = async (id) => {
@@ -103,6 +115,7 @@ export default function Salary() {
                 <TableCell className="text-right font-semibold">{money(s.amount)}</TableCell>
                 <TableCell><StatusBadge status={s.status} /></TableCell>
                 <TableCell className="text-right space-x-2">
+                  {s.status === "pending" && isPrincipal && <Button data-testid={`adjust-salary-${s.id}`} size="sm" variant="outline" onClick={() => openAdjust(s)}><Pencil className="h-3.5 w-3.5 mr-1" />Adjust</Button>}
                   {s.status === "pending" && isPrincipal && <Button data-testid={`pay-salary-${s.id}`} size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => pay(s.id)}><CheckCircle2 className="h-3.5 w-3.5 mr-1" />Pay</Button>}
                   {s.status === "paid" && <Button data-testid={`slip-${s.id}`} size="sm" variant="outline" onClick={() => slip(s.id)}><Download className="h-3.5 w-3.5 mr-1" />Slip</Button>}
                   {s.status === "paid" && isPrincipal && <Button data-testid={`email-slip-${s.id}`} size="sm" variant="outline" onClick={() => emailSlip(s.id)}><Mail className="h-3.5 w-3.5 mr-1" />Email</Button>}
@@ -112,6 +125,20 @@ export default function Salary() {
           </Table>
         )}
       </Card>
+      <Dialog open={adjustOpen} onOpenChange={setAdjustOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Manual Adjustment{adjust.teacher_name ? ` — ${adjust.teacher_name}` : ""}</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-slate-400">{adjust.month} · Add a bonus/incentive (allowance) or a one-off deduction. Net pay recalculates instantly.</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Extra Allowance / Bonus (₹)</Label><Input data-testid="adjust-allowance" type="number" value={adjust.extra_allowance} onChange={(e) => setAdjust({ ...adjust, extra_allowance: e.target.value })} /></div>
+              <div><Label>Extra Deduction (₹)</Label><Input data-testid="adjust-deduction" type="number" value={adjust.extra_deductions} onChange={(e) => setAdjust({ ...adjust, extra_deductions: e.target.value })} /></div>
+            </div>
+            <div><Label>Note (optional)</Label><Input data-testid="adjust-note" value={adjust.note} onChange={(e) => setAdjust({ ...adjust, note: e.target.value })} placeholder="e.g. Diwali bonus / advance recovery" /></div>
+          </div>
+          <DialogFooter><Button data-testid="save-adjust-btn" onClick={saveAdjust} className="btn-gradient">Save Adjustment</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
