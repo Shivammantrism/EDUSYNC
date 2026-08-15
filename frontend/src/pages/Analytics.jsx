@@ -61,6 +61,13 @@ export default function Analytics() {
     } catch { setDrill({ cls, date: fullDate, loading: false, students: [] }); }
   };
 
+  const messageAllAbsent = () => {
+    (drill?.students || []).filter((s) => s.parent_phone).forEach((s) => {
+      const num = String(s.parent_phone).replace(/\D/g, "").slice(-10);
+      window.open(`https://wa.me/91${num}?text=${encodeURIComponent(`Dear Parent, ${s.name} was marked absent on ${drill.date}. Please ensure regular attendance.`)}`, "_blank");
+    });
+  };
+
   const selector = (
     <div className="flex flex-wrap items-center gap-1.5" data-testid="analytics-range">
       {PRESETS.map(([val, label]) => (
@@ -240,6 +247,11 @@ export default function Analytics() {
                 </div>
               ))}
             </div>
+          )}
+          {drill && !drill.loading && (drill.students || []).some((s) => s.parent_phone) && (
+            <Button data-testid="message-all-absent" onClick={messageAllAbsent} className="w-full bg-emerald-600 hover:bg-emerald-700">
+              <Phone className="h-4 w-4 mr-1" />Message all {(drill.students || []).filter((s) => s.parent_phone).length} parents on WhatsApp
+            </Button>
           )}
         </DialogContent>
       </Dialog>
