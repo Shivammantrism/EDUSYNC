@@ -169,6 +169,7 @@ const NAV = {
     ["/app/homework", "Homework", BookOpen, "homework"],
     ["/app/salary", "Staff Salary", Banknote, "salary"],
     ["/app/leaves", "Leave Requests", PlaneTakeoff, "leaves"],
+    ["/app/meetings", "Staff Meetings", CalendarCheck, "attendance"],
     ["/app/announcements", "Announcements", Megaphone, "announcements"],
     ["/app/events", "Events", CalendarDays, "announcements"],
     ["/app/complaints", "Complaints", MessageSquareWarning, "complaints"],

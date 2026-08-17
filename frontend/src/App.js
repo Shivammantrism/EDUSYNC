@@ -23,6 +23,7 @@ import IDCardPage from "@/pages/IDCardPage";
 import Branding from "@/pages/Branding";
 import BulkIDCards from "@/pages/BulkIDCards";
 import FacultyIDCards from "@/pages/FacultyIDCards";
+import Meetings from "@/pages/Meetings";
 import Quizzes from "@/pages/Quizzes";
 import Gallery from "@/pages/Gallery";
 import PrivacyPolicy from "@/pages/PrivacyPolicy";
@@ -91,6 +92,7 @@ function App() {
               <Route path="quizzes" element={<Quizzes />} />
               <Route path="homework" element={<Homework />} />
               <Route path="salary" element={<Salary />} />
+              <Route path="meetings" element={<Meetings />} />
               <Route path="leaves" element={<Leaves />} />
               <Route path="announcements" element={<Announcements />} />
               <Route path="complaints" element={<Complaints />} />

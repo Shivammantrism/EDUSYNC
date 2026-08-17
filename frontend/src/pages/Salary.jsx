@@ -10,25 +10,32 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Banknote, Plus, CheckCircle2, Download, SlidersHorizontal, Mail, Pencil } from "lucide-react";
+import { Banknote, Plus, CheckCircle2, Download, SlidersHorizontal, Mail, Pencil, CalendarClock } from "lucide-react";
 
 export default function Salary() {
-  const { user } = useAuth();
+  const { user, institute, refreshInstitute } = useAuth();
   const isPrincipal = user.role === "principal";
   const [salaries, setSalaries] = useState(null);
   const [teachers, setTeachers] = useState([]);
   const [open, setOpen] = useState(false);
   const [structOpen, setStructOpen] = useState(false);
+  const [quotaOpen, setQuotaOpen] = useState(false);
+  const [quota, setQuota] = useState(2);
   const [form, setForm] = useState({ teacher_id: "", month: new Date().toISOString().slice(0, 7) });
   const [struct, setStruct] = useState({ teacher_id: "", base: 30000, hra: 8000, allowances: 4000, deductions: 2000 });
   const [adjustOpen, setAdjustOpen] = useState(false);
-  const [adjust, setAdjust] = useState({ id: "", teacher_name: "", month: "", extra_deductions: 0, extra_allowance: 0, note: "" });
+  const [adjust, setAdjust] = useState({ id: "", teacher_name: "", month: "", base: 0, hra: 0, allowances: 0, lwp_amount: 0, extra_deductions: 0, extra_allowance: 0, note: "" });
 
   const load = () => api.get("/salaries").then((r) => setSalaries(r.data));
   useEffect(() => { load(); if (isPrincipal) api.get("/teachers").then((r) => setTeachers(r.data)); }, []);
+  useEffect(() => { if (institute?.leave_quota != null) setQuota(institute.leave_quota); }, [institute]);
 
+  const saveQuota = async () => {
+    try { await api.put("/institute", { leave_quota: Number(quota) }); toast.success(`Paid leave quota set to ${quota} days/month`); setQuotaOpen(false); refreshInstitute?.(); }
+    catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
+  };
   const create = async () => {
-    try { await api.post("/salaries", form); toast.success("Salary generated with LWP calculation"); setOpen(false); load(); }
+    try { await api.post("/salaries", form); toast.success("Draft salary generated with pay-cut calculation"); setOpen(false); load(); }
     catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
   };
   const saveStruct = async () => {
@@ -38,17 +45,17 @@ export default function Salary() {
     } catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
   };
   const openAdjust = (s) => {
-    setAdjust({ id: s.id, teacher_name: s.teacher_name, month: s.month, extra_deductions: s.extra_deductions || 0, extra_allowance: s.extra_allowance || 0, note: s.adjust_note || "" });
+    setAdjust({ id: s.id, teacher_name: s.teacher_name, month: s.month, base: s.base || 0, hra: s.hra || 0, allowances: s.special ?? s.allowances ?? 0, lwp_amount: s.lwp_amount || 0, extra_deductions: s.extra_deductions || 0, extra_allowance: s.extra_allowance || 0, note: s.adjust_note || "" });
     setAdjustOpen(true);
   };
   const saveAdjust = async () => {
     try {
-      const { data } = await api.patch(`/salaries/${adjust.id}`, { extra_deductions: Number(adjust.extra_deductions), extra_allowance: Number(adjust.extra_allowance), note: adjust.note });
+      const { data } = await api.patch(`/salaries/${adjust.id}`, { base: Number(adjust.base), hra: Number(adjust.hra), allowances: Number(adjust.allowances), lwp_amount: Number(adjust.lwp_amount), extra_deductions: Number(adjust.extra_deductions), extra_allowance: Number(adjust.extra_allowance), note: adjust.note });
       toast.success(`Adjusted · Net ${money(data.amount)}`); setAdjustOpen(false); load();
     } catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
   };
   const pay = async (id) => {
-    try { const { data } = await api.put(`/salaries/${id}/pay`); toast.success(`Paid · Slip ${data.slip_no}`); load(); }
+    try { const { data } = await api.put(`/salaries/${id}/pay`); toast.success(`Approved & Paid · Slip ${data.slip_no}`); load(); }
     catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
   };
   const slip = (id) => { const token = localStorage.getItem("edusync_token"); fetch(`${API}/salaries/${id}/slip`, { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.blob()).then((b) => window.open(URL.createObjectURL(b))); };
@@ -57,9 +64,20 @@ export default function Salary() {
   if (!salaries) return <Loader />;
   return (
     <div>
-      <PageHeader title={isPrincipal ? "Staff Salary" : "My Salary"} subtitle="Structured payroll with LWP & slips" actions={
+      <PageHeader title={isPrincipal ? "Staff Salary" : "My Salary"} subtitle="Draft payroll → edit → Approve & Pay, with automatic leave pay-cut" actions={
         isPrincipal && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <Dialog open={quotaOpen} onOpenChange={setQuotaOpen}>
+              <DialogTrigger asChild><Button data-testid="leave-quota-btn" variant="outline"><CalendarClock className="h-4 w-4 mr-2" />Leave Policy</Button></DialogTrigger>
+              <DialogContent>
+                <DialogHeader><DialogTitle>Monthly Paid Leave Policy</DialogTitle></DialogHeader>
+                <div className="space-y-3">
+                  <div><Label>Paid Leave Quota (days / month)</Label><Input data-testid="leave-quota-input" type="number" min="0" value={quota} onChange={(e) => setQuota(e.target.value)} /></div>
+                  <p className="text-xs text-slate-400">Leaves within the quota are paid. Excess leave is auto-deducted on the payslip as (Gross ÷ days-in-month) × excess days.</p>
+                </div>
+                <DialogFooter><Button data-testid="save-quota-btn" onClick={saveQuota} className="btn-gradient">Save Policy</Button></DialogFooter>
+              </DialogContent>
+            </Dialog>
             <Dialog open={structOpen} onOpenChange={setStructOpen}>
               <DialogTrigger asChild><Button data-testid="salary-structure-btn" variant="outline"><SlidersHorizontal className="h-4 w-4 mr-2" />Salary Structure</Button></DialogTrigger>
               <DialogContent>
@@ -77,7 +95,6 @@ export default function Salary() {
                     <div><Label>Allowances (₹)</Label><Input data-testid="struct-allowances" type="number" value={struct.allowances} onChange={(e) => setStruct({ ...struct, allowances: e.target.value })} /></div>
                     <div><Label>Deductions (₹)</Label><Input data-testid="struct-deductions" type="number" value={struct.deductions} onChange={(e) => setStruct({ ...struct, deductions: e.target.value })} /></div>
                   </div>
-                  <p className="text-xs text-slate-400">LWP is auto-calculated on payslip: gross ÷ days-in-month × unapproved (rejected) leave days.</p>
                 </div>
                 <DialogFooter><Button data-testid="save-struct-btn" onClick={saveStruct} disabled={!struct.teacher_id} className="btn-gradient">Save Structure</Button></DialogFooter>
               </DialogContent>
@@ -94,9 +111,9 @@ export default function Salary() {
                     </Select>
                   </div>
                   <div><Label>Month</Label><Input data-testid="salary-month" type="month" value={form.month} onChange={(e) => setForm({ ...form, month: e.target.value })} /></div>
-                  <p className="text-xs text-slate-400">Uses the teacher's configured structure and deducts LWP for unapproved leaves in that month.</p>
+                  <p className="text-xs text-slate-400">Generates a draft using the teacher's structure and deducts pay for leave beyond the monthly quota. You can edit it before Approve & Pay.</p>
                 </div>
-                <DialogFooter><Button data-testid="save-salary-btn" onClick={create} disabled={!form.teacher_id} className="btn-gradient">Generate</Button></DialogFooter>
+                <DialogFooter><Button data-testid="save-salary-btn" onClick={create} disabled={!form.teacher_id} className="btn-gradient">Generate Draft</Button></DialogFooter>
               </DialogContent>
             </Dialog>
           </div>
@@ -105,18 +122,18 @@ export default function Salary() {
       <Card className="border-slate-200 card-premium">
         {salaries.length === 0 ? <Empty icon={Banknote} title="No salary records" /> : (
           <Table>
-            <TableHeader><TableRow>{isPrincipal && <TableHead>Teacher</TableHead>}<TableHead>Month</TableHead><TableHead className="text-right">Gross</TableHead><TableHead className="text-right">LWP</TableHead><TableHead className="text-right">Net</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow>{isPrincipal && <TableHead>Teacher</TableHead>}<TableHead>Month</TableHead><TableHead className="text-right">Gross</TableHead><TableHead className="text-right">Pay Cut</TableHead><TableHead className="text-right">Net</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
             <TableBody>{salaries.map((s) => (
               <TableRow key={s.id} data-testid={`salary-row-${s.id}`}>
                 {isPrincipal && <TableCell className="font-medium">{s.teacher_name}</TableCell>}
                 <TableCell>{s.month}</TableCell>
                 <TableCell className="text-right">{money(s.gross ?? s.amount)}</TableCell>
-                <TableCell className="text-right text-red-600">{s.lwp_days ? `${s.lwp_days}d · ${money(s.lwp_amount)}` : "—"}</TableCell>
+                <TableCell className="text-right text-red-600">{s.lwp_amount ? `${s.lwp_days ? s.lwp_days + "d · " : ""}${money(s.lwp_amount)}` : "—"}</TableCell>
                 <TableCell className="text-right font-semibold">{money(s.amount)}</TableCell>
-                <TableCell><StatusBadge status={s.status} /></TableCell>
+                <TableCell><StatusBadge status={s.status === "pending" ? "draft" : s.status} /></TableCell>
                 <TableCell className="text-right space-x-2">
-                  {s.status === "pending" && isPrincipal && <Button data-testid={`adjust-salary-${s.id}`} size="sm" variant="outline" onClick={() => openAdjust(s)}><Pencil className="h-3.5 w-3.5 mr-1" />Adjust</Button>}
-                  {s.status === "pending" && isPrincipal && <Button data-testid={`pay-salary-${s.id}`} size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => pay(s.id)}><CheckCircle2 className="h-3.5 w-3.5 mr-1" />Pay</Button>}
+                  {s.status === "pending" && isPrincipal && <Button data-testid={`adjust-salary-${s.id}`} size="sm" variant="outline" onClick={() => openAdjust(s)}><Pencil className="h-3.5 w-3.5 mr-1" />Edit</Button>}
+                  {s.status === "pending" && isPrincipal && <Button data-testid={`pay-salary-${s.id}`} size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => pay(s.id)}><CheckCircle2 className="h-3.5 w-3.5 mr-1" />Approve & Pay</Button>}
                   {s.status === "paid" && <Button data-testid={`slip-${s.id}`} size="sm" variant="outline" onClick={() => slip(s.id)}><Download className="h-3.5 w-3.5 mr-1" />Slip</Button>}
                   {s.status === "paid" && isPrincipal && <Button data-testid={`email-slip-${s.id}`} size="sm" variant="outline" onClick={() => emailSlip(s.id)}><Mail className="h-3.5 w-3.5 mr-1" />Email</Button>}
                 </TableCell>
@@ -127,16 +144,22 @@ export default function Salary() {
       </Card>
       <Dialog open={adjustOpen} onOpenChange={setAdjustOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Manual Adjustment{adjust.teacher_name ? ` — ${adjust.teacher_name}` : ""}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Edit Draft Slip{adjust.teacher_name ? ` — ${adjust.teacher_name}` : ""}</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <p className="text-xs text-slate-400">{adjust.month} · Add a bonus/incentive (allowance) or a one-off deduction. Net pay recalculates instantly.</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div><Label>Extra Allowance / Bonus (₹)</Label><Input data-testid="adjust-allowance" type="number" value={adjust.extra_allowance} onChange={(e) => setAdjust({ ...adjust, extra_allowance: e.target.value })} /></div>
-              <div><Label>Extra Deduction (₹)</Label><Input data-testid="adjust-deduction" type="number" value={adjust.extra_deductions} onChange={(e) => setAdjust({ ...adjust, extra_deductions: e.target.value })} /></div>
+            <p className="text-xs text-slate-400">{adjust.month} · Edit base components, override the auto pay-cut, or add a bonus / one-off deduction. Net recalculates on save.</p>
+            <div className="grid grid-cols-3 gap-3">
+              <div><Label>Base (₹)</Label><Input data-testid="adjust-base" type="number" value={adjust.base} onChange={(e) => setAdjust({ ...adjust, base: e.target.value })} /></div>
+              <div><Label>HRA (₹)</Label><Input data-testid="adjust-hra" type="number" value={adjust.hra} onChange={(e) => setAdjust({ ...adjust, hra: e.target.value })} /></div>
+              <div><Label>Allowances (₹)</Label><Input data-testid="adjust-allowances" type="number" value={adjust.allowances} onChange={(e) => setAdjust({ ...adjust, allowances: e.target.value })} /></div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div><Label>Pay Cut / LWP (₹)</Label><Input data-testid="adjust-lwp" type="number" value={adjust.lwp_amount} onChange={(e) => setAdjust({ ...adjust, lwp_amount: e.target.value })} /></div>
+              <div><Label>Bonus (₹)</Label><Input data-testid="adjust-allowance" type="number" value={adjust.extra_allowance} onChange={(e) => setAdjust({ ...adjust, extra_allowance: e.target.value })} /></div>
+              <div><Label>One-off Deduction (₹)</Label><Input data-testid="adjust-deduction" type="number" value={adjust.extra_deductions} onChange={(e) => setAdjust({ ...adjust, extra_deductions: e.target.value })} /></div>
             </div>
             <div><Label>Note (optional)</Label><Input data-testid="adjust-note" value={adjust.note} onChange={(e) => setAdjust({ ...adjust, note: e.target.value })} placeholder="e.g. Diwali bonus / advance recovery" /></div>
           </div>
-          <DialogFooter><Button data-testid="save-adjust-btn" onClick={saveAdjust} className="btn-gradient">Save Adjustment</Button></DialogFooter>
+          <DialogFooter><Button data-testid="save-adjust-btn" onClick={saveAdjust} className="btn-gradient">Save Draft</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

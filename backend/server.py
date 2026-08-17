@@ -2200,22 +2200,24 @@ async def _gen_salary(t, month, institute_id):
     y, m = int(month[:4]), int(month[5:7])
     dim = calendar.monthrange(y, m)[1]
     ms, me = date(y, m, 1), date(y, m, dim)
-    leave_lwp = 0
-    for lv in await db.leaves.find({"institute_id": institute_id, "teacher_id": t["id"], "status": "rejected"}).to_list(1000):
+    total_leave = 0
+    for lv in await db.leaves.find({"institute_id": institute_id, "teacher_id": t["id"], "status": {"$in": ["approved", "rejected"]}}).to_list(1000):
         try:
             f = date.fromisoformat(lv["from_date"]); tt = date.fromisoformat(lv["to_date"])
         except Exception:
             continue
         s0, e0 = max(f, ms), min(tt, me)
         if s0 <= e0:
-            leave_lwp += (e0 - s0).days + 1
-    # attendance-based LWP: absent working days (Mon-Sat) when attendance is tracked
+            total_leave += (e0 - s0).days + 1
+    # attendance-based absence: absent working days (Mon-Sat) when attendance is tracked
     present = await db.teacher_attendance.count_documents({"institute_id": institute_id, "teacher_id": t["id"], "date": {"$regex": f"^{month}"}})
     absent_days = 0
     if present > 0:
         working = sum(1 for dd in range(1, dim + 1) if date(y, m, dd).weekday() != 6)
         absent_days = max(working - present, 0)
-    lwp_days = leave_lwp + absent_days
+    total_absence = total_leave + absent_days
+    quota = int(inst.get("leave_quota", 2) or 0)
+    lwp_days = max(0, total_absence - quota)
     lwp_amount = round(gross / dim * lwp_days, 2) if dim else 0
     total_ded = round(epf + pt + tds + extra_ded + lwp_amount, 2)
     net = round(gross - total_ded, 2)
@@ -2224,7 +2226,7 @@ async def _gen_salary(t, month, institute_id):
                                   "base": base, "hra": hra, "special": special, "allowances": special, "gross": gross,
                                   "epf": epf, "professional_tax": pt, "tds": tds, "extra_deductions": extra_ded,
                                   "extra_allowance": 0.0, "deductions": round(epf + pt + tds + extra_ded, 2), "metro": metro,
-                                  "days_in_month": dim, "lwp_days": lwp_days, "leave_lwp_days": leave_lwp, "absent_days": absent_days,
+                                  "days_in_month": dim, "lwp_days": lwp_days, "leave_quota": quota, "total_absence_days": total_absence, "absent_days": absent_days,
                                   "lwp_amount": lwp_amount, "total_deductions": total_ded, "amount": net, "status": "pending",
                                   "institute_id": institute_id, "created_at": now_iso()})
     return sid
@@ -2253,6 +2255,10 @@ async def create_salary(body: SalaryIn, user=Depends(require("principal"))):
 class SalaryAdjust(BaseModel):
     extra_deductions: Optional[float] = None
     extra_allowance: Optional[float] = None
+    base: Optional[float] = None
+    hra: Optional[float] = None
+    allowances: Optional[float] = None
+    lwp_amount: Optional[float] = None
     note: Optional[str] = ""
 
 
@@ -2263,12 +2269,18 @@ async def adjust_salary(sid: str, body: SalaryAdjust, user=Depends(require("prin
         raise HTTPException(404, "Salary not found")
     if s.get("status") == "paid":
         raise HTTPException(400, "Cannot adjust a paid salary")
-    extra_ded = body.extra_deductions if body.extra_deductions is not None else s.get("extra_deductions", 0)
-    extra_allow = body.extra_allowance if body.extra_allowance is not None else s.get("extra_allowance", 0)
-    total_ded = round(s["epf"] + s["professional_tax"] + s["tds"] + float(extra_ded) + s.get("lwp_amount", 0), 2)
-    net = round(s["gross"] + float(extra_allow) - total_ded, 2)
-    await db.salaries.update_one({"id": sid}, {"$set": {"extra_deductions": float(extra_ded), "extra_allowance": float(extra_allow),
-                                 "deductions": round(s["epf"] + s["professional_tax"] + s["tds"] + float(extra_ded), 2),
+    base = float(body.base) if body.base is not None else s.get("base", 0)
+    hra = float(body.hra) if body.hra is not None else s.get("hra", 0)
+    special = float(body.allowances) if body.allowances is not None else s.get("special", 0)
+    lwp_amt = float(body.lwp_amount) if body.lwp_amount is not None else s.get("lwp_amount", 0)
+    extra_ded = float(body.extra_deductions) if body.extra_deductions is not None else s.get("extra_deductions", 0)
+    extra_allow = float(body.extra_allowance) if body.extra_allowance is not None else s.get("extra_allowance", 0)
+    gross = round(base + hra + special, 2)
+    total_ded = round(s["epf"] + s["professional_tax"] + s["tds"] + extra_ded + lwp_amt, 2)
+    net = round(gross + extra_allow - total_ded, 2)
+    await db.salaries.update_one({"id": sid}, {"$set": {"base": base, "hra": hra, "special": special, "allowances": special,
+                                 "gross": gross, "lwp_amount": lwp_amt, "extra_deductions": extra_ded, "extra_allowance": extra_allow,
+                                 "deductions": round(s["epf"] + s["professional_tax"] + s["tds"] + extra_ded, 2),
                                  "total_deductions": total_ded, "amount": net, "adjust_note": body.note or ""}})
     return await db.salaries.find_one({"id": sid}, {"_id": 0})
 
@@ -2683,6 +2695,65 @@ async def edit_tt_cell(body: CellEdit, user=Depends(require("principal"))):
     doc["id"] = str(uuid.uuid4()); doc["created_at"] = now_iso()
     await db.timetable.insert_one(doc)
     return await db.timetable.find_one({"id": doc["id"]}, {"_id": 0})
+
+
+# ---------------------------------------------------------------- meetings
+class MeetingIn(BaseModel):
+    title: str
+    date: str
+    time: Optional[str] = ""
+    agenda: Optional[str] = ""
+    teacher_ids: List[str] = []
+
+
+class MeetingRespond(BaseModel):
+    status: str
+    note: Optional[str] = ""
+
+
+@api.get("/meetings")
+async def list_meetings(user=Depends(require("principal", "teacher"))):
+    ms = await db.meetings.find(scope(user), {"_id": 0}).sort("date", -1).to_list(1000)
+    tmap = {t["id"]: t["name"] async for t in db.users.find({"institute_id": user["institute_id"], "role": "teacher"}, {"_id": 0, "id": 1, "name": 1})}
+    out = []
+    for mtg in ms:
+        invitees = mtg.get("teacher_ids") or list(tmap.keys())
+        if user["role"] == "teacher" and user["id"] not in invitees:
+            continue
+        resp = mtg.get("responses") or {}
+        if user["role"] == "principal":
+            mtg["confirmations"] = [{"teacher_id": tid, "name": tmap.get(tid, "?"), **(resp.get(tid) or {"status": "pending"})} for tid in invitees]
+            mtg["invited_count"] = len(invitees)
+        else:
+            mtg["my_response"] = resp.get(user["id"]) or {"status": "pending"}
+        mtg.pop("responses", None)
+        out.append(mtg)
+    return out
+
+
+@api.post("/meetings")
+async def create_meeting(body: MeetingIn, user=Depends(require("principal"))):
+    mid = str(uuid.uuid4())
+    doc = {"id": mid, "institute_id": user["institute_id"], "title": body.title, "date": body.date,
+           "time": body.time or "", "agenda": body.agenda or "", "teacher_ids": body.teacher_ids or [],
+           "responses": {}, "created_at": now_iso()}
+    await db.meetings.insert_one(doc)
+    return {k: v for k, v in doc.items() if k not in ("responses", "_id")}
+
+
+@api.post("/meetings/{mid}/respond")
+async def respond_meeting(mid: str, body: MeetingRespond, user=Depends(require("teacher"))):
+    m = await db.meetings.find_one({"id": mid, "institute_id": user["institute_id"]})
+    if not m:
+        raise HTTPException(404, "Meeting not found")
+    await db.meetings.update_one({"id": mid}, {"$set": {f"responses.{user['id']}": {"status": body.status, "note": body.note or "", "at": now_iso()}}})
+    return {"ok": True}
+
+
+@api.delete("/meetings/{mid}")
+async def delete_meeting(mid: str, user=Depends(require("principal"))):
+    await db.meetings.delete_one({"id": mid, "institute_id": user["institute_id"]})
+    return {"ok": True}
 
 
 @api.get("/timetable/pdf")
@@ -4164,7 +4235,7 @@ async def get_institute(user=Depends(get_current_user)):
 
 @api.put("/institute")
 async def update_institute(payload: dict, user=Depends(require("principal"))):
-    allowed = {"name", "address", "phone", "email", "logo_url", "logo_path", "seal_url", "seal_path", "id_template", "upi_id", "metro", "collection_target", "code", "id_card_primary", "id_card_accent"}
+    allowed = {"name", "address", "phone", "email", "logo_url", "logo_path", "seal_url", "seal_path", "id_template", "upi_id", "metro", "collection_target", "code", "id_card_primary", "id_card_accent", "leave_quota"}
     upd = {k: v for k, v in payload.items() if k in allowed and v is not None}
     if "code" in upd:
         clean = "".join(c for c in str(upd["code"]) if c.isalnum()).upper()[:4]
